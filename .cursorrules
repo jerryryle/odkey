@@ -1,0 +1,116 @@
+# Cursor Rules for ESP-IDF PlatformIO Project
+# Target: Adafruit ESP32-S2 Feather Board
+
+## Project Context
+This is a PlatformIO project using the ESP-IDF framework targeting the Adafruit ESP32-S2 Feather board. The project uses C/C++ for embedded development on ESP32-S2 microcontroller.
+
+## Development Guidelines
+
+### Code Style & Standards
+- Follow ESP-IDF coding standards and conventions
+- Use consistent indentation (4 spaces for C/C++)
+- Prefer descriptive variable and function names
+- Add comprehensive comments for complex logic
+- Use ESP-IDF logging macros (ESP_LOGI, ESP_LOGW, ESP_LOGE, etc.) instead of printf
+- Follow ESP-IDF component structure when creating modules
+
+### ESP-IDF Specific Patterns
+- Use ESP-IDF APIs and components (esp_*, nvs_*, wifi_*, etc.)
+- Prefer ESP-IDF configuration system (Kconfig) over hardcoded values
+- Use proper error handling with esp_err_t return types
+- Implement proper task management with FreeRTOS
+- Use ESP-IDF memory management functions (malloc/free with proper checks)
+
+### Hardware-Specific Considerations
+- ESP32-S2 has USB OTG capabilities - consider USB device/host functionality
+- Built-in WiFi and Bluetooth (if enabled) - use ESP-IDF networking stack
+- GPIO pins follow ESP32-S2 pinout for Adafruit Feather board
+- Consider power management for battery-powered applications
+- Use appropriate voltage levels (3.3V logic)
+
+### File Organization
+- Keep main application logic in `src/main.c`
+- Create separate source files for different functionalities
+- Use header files in `include/` directory for public interfaces
+- Place component-specific code in separate directories
+- Follow ESP-IDF component structure for reusable modules
+
+### Build System
+- Use PlatformIO build system with ESP-IDF framework
+- Leverage `sdkconfig` for configuration management
+- Use CMakeLists.txt for component dependencies
+- Consider using ESP-IDF menuconfig for configuration
+
+### Debugging & Development
+- Use ESP-IDF logging levels appropriately
+- Implement proper error handling and recovery
+- Use ESP-IDF monitoring tools (idf.py monitor)
+- Consider using ESP-IDF debugging features (GDB, core dumps)
+- Test on actual hardware regularly
+
+### Performance Considerations
+- Use appropriate FreeRTOS task priorities
+- Consider memory constraints of ESP32-S2
+- Optimize for power consumption when needed
+- Use ESP-IDF performance monitoring tools
+- Consider using PSRAM if available
+
+### Security Best Practices
+- Use ESP-IDF security features (secure boot, flash encryption)
+- Implement proper authentication mechanisms
+- Use HTTPS/TLS for network communications
+- Store sensitive data securely (NVS with encryption)
+- Follow ESP-IDF security guidelines
+
+### Common ESP-IDF Patterns
+```c
+// Error handling
+esp_err_t ret = some_function();
+if (ret != ESP_OK) {
+    ESP_LOGE(TAG, "Function failed: %s", esp_err_to_name(ret));
+    return ret;
+}
+
+// Task creation
+xTaskCreate(task_function, "task_name", 4096, NULL, 5, &task_handle);
+
+// WiFi initialization
+wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+esp_wifi_init(&cfg);
+```
+
+### PlatformIO Integration
+- Use PlatformIO libraries when possible
+- Leverage PlatformIO's library manager
+- Use appropriate build flags for ESP32-S2
+- Consider using PlatformIO's testing framework
+- Use PlatformIO's upload and monitoring features
+
+### Documentation
+- Document public APIs with proper comments
+- Include usage examples in code comments
+- Document hardware connections and pin assignments
+- Keep README updated with build and usage instructions
+- Document any custom components or configurations
+
+## File Extensions
+- `.c` - C source files
+- `.h` - Header files
+- `.cpp` - C++ source files (if using C++)
+- `CMakeLists.txt` - Build configuration
+- `sdkconfig` - ESP-IDF configuration
+- `platformio.ini` - PlatformIO configuration
+
+## Dependencies
+- ESP-IDF framework components
+- PlatformIO ESP32 platform
+- Adafruit Feather ESP32-S2 board support
+- Standard C library functions
+- FreeRTOS APIs (through ESP-IDF)
+
+## Testing
+- Test on actual Adafruit ESP32-S2 Feather hardware
+- Use ESP-IDF unit testing framework when appropriate
+- Test power consumption and performance
+- Validate WiFi and other peripheral functionality
+- Test with different power sources (USB vs battery)
