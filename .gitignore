@@ -7,6 +7,7 @@
 build/
 sdkconfig.old
 dependencies.lock
+managed_components/
 
 # IDE files
 .vscode/.browse.c_cpp.db*
@@ -23,6 +24,9 @@ dependencies.lock
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Prevent .DS_Store in managed_components
+managed_components/**/.DS_Store
 
 # Logs
 *.log
