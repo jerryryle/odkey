@@ -3,12 +3,10 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "usb_keyboard.h"
+#include "usb_keyboard_keys.h"
 #include "sdkconfig.h"
 
 static const char *TAG = "main";
-
-// Key code for 'A' key
-#define KEY_A 0x04
 
 void app_main() {
     ESP_LOGI(TAG, "Starting USB HID Keyboard Demo");
