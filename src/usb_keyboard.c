@@ -15,8 +15,10 @@ static const char *TAG = "usb_keyboard";
 // Private variables
 static bool s_initialized = false;
 
+#define HID_KEYBOARD_REPORT_ID 1
+
 /************* TinyUSB descriptors ****************/
-#define TUSB_DESC_TOTAL_LEN      (TUD_CONFIG_DESC_LEN + CFG_TUD_HID * TUD_HID_DESC_LEN)
+#define TUSB_DESC_TOTAL_LEN (TUD_CONFIG_DESC_LEN + CFG_TUD_HID * TUD_HID_DESC_LEN)
 
 /**
  * @brief HID report descriptor
@@ -25,7 +27,7 @@ static bool s_initialized = false;
  * so we must define both report descriptors
  */
 const uint8_t hid_report_descriptor[] = {
-    TUD_HID_REPORT_DESC_KEYBOARD(HID_REPORT_ID(HID_ITF_PROTOCOL_KEYBOARD))
+    TUD_HID_REPORT_DESC_KEYBOARD(HID_REPORT_ID(HID_KEYBOARD_REPORT_ID))
 };
 
 /**
@@ -33,11 +35,11 @@ const uint8_t hid_report_descriptor[] = {
  */
 const char *hid_string_descriptor[5] = {
     // array of pointer to string descriptors
-    (char[]){0x09, 0x04},  // 0: is supported language is English (0x0409)
-    "TinyUSB",             // 1: Manufacturer
-    "TinyUSB Device",      // 2: Product
-    "123456",              // 3: Serials, should use chip ID
-    "Example HID interface",  // 4: HID
+    (char[]){0x09, 0x04},   // 0: is supported language is English (0x0409)
+    "Jerry",                // 1: Manufacturer
+    "ODKey",                // 2: Product
+    "123456",               // 3: Serial #
+    "ODKey Keyboard",       // 4: HID
 };
 
 /**
@@ -50,7 +52,7 @@ static const uint8_t hid_configuration_descriptor[] = {
     TUD_CONFIG_DESCRIPTOR(1, 1, 0, TUSB_DESC_TOTAL_LEN, TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 100),
 
     // Interface number, string index, boot protocol, report descriptor len, EP In address, size & polling interval
-    TUD_HID_DESCRIPTOR(0, 4, false, sizeof(hid_report_descriptor), 0x81, 16, 10),
+    TUD_HID_DESCRIPTOR(0, 4, HID_ITF_PROTOCOL_KEYBOARD, sizeof(hid_report_descriptor), 0x81, 16, 10),
 };
 
 /********* TinyUSB HID callbacks ***************/
@@ -111,18 +113,20 @@ bool usb_keyboard_init(void) {
         vTaskDelay(pdMS_TO_TICKS(100));
     }
     
+    vTaskDelay(pdMS_TO_TICKS(1000));
+
     ESP_LOGI(TAG, "USB device ready! Sending single 'A' key press...");
     
     // Send single 'A' key press
     uint8_t keycode[6] = {0x04, 0, 0, 0, 0, 0};
-    tud_hid_keyboard_report(HID_ITF_PROTOCOL_KEYBOARD, 0, keycode);
+    tud_hid_keyboard_report(HID_KEYBOARD_REPORT_ID, 0, keycode);
     
     // Wait a bit
     vTaskDelay(pdMS_TO_TICKS(500));
     
     // Release the key
     uint8_t empty_keycode[6] = {0, 0, 0, 0, 0, 0};
-    tud_hid_keyboard_report(HID_ITF_PROTOCOL_KEYBOARD, 0, empty_keycode);
+    tud_hid_keyboard_report(HID_KEYBOARD_REPORT_ID, 0, empty_keycode);
     
     ESP_LOGI(TAG, "Key press/release sent. Done.");
     
@@ -136,7 +140,7 @@ bool usb_keyboard_press_key(uint8_t key_code) {
     }
 
     uint8_t keycode[6] = {key_code, 0, 0, 0, 0, 0};
-    tud_hid_keyboard_report(HID_ITF_PROTOCOL_KEYBOARD, 0, keycode);
+    tud_hid_keyboard_report(HID_KEYBOARD_REPORT_ID, 0, keycode);
     ESP_LOGI(TAG, "Key 0x%02X pressed manually", key_code);
     return true;
 }
@@ -147,7 +151,7 @@ bool usb_keyboard_release_keys(void) {
     }
 
     uint8_t keycode[6] = {0, 0, 0, 0, 0, 0};
-    tud_hid_keyboard_report(HID_ITF_PROTOCOL_KEYBOARD, 0, keycode);
+    tud_hid_keyboard_report(HID_KEYBOARD_REPORT_ID, 0, keycode);
     ESP_LOGI(TAG, "All keys released");
     return true;
 }
