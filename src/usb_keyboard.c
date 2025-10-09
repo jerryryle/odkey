@@ -3,7 +3,6 @@
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "freertos/timers.h"
 #include "esp_log.h"
 #include "tinyusb.h"
 #include "tusb.h"
@@ -15,29 +14,6 @@ static const char *TAG = "usb_keyboard";
 
 // Private variables
 static bool s_initialized = false;
-static bool s_auto_typing_active = false;
-static TimerHandle_t s_key_timer = NULL;
-static uint8_t s_current_key = 0;
-static bool s_key_pressed = false;
-
-// Timer callback function
-static void key_timer_callback(TimerHandle_t xTimer) {
-    if (tud_hid_ready() && s_auto_typing_active) {
-        if (!s_key_pressed) {
-            // Press the key
-            uint8_t keycode[6] = {s_current_key, 0, 0, 0, 0, 0};
-            tud_hid_keyboard_report(0, 0, keycode);
-            ESP_LOGI(TAG, "Key 0x%02X pressed", s_current_key);
-            s_key_pressed = true;
-        } else {
-            // Release the key
-            uint8_t keycode[6] = {0, 0, 0, 0, 0, 0};
-            tud_hid_keyboard_report(0, 0, keycode);
-            ESP_LOGI(TAG, "Key 0x%02X released", s_current_key);
-            s_key_pressed = false;
-        }
-    }
-}
 
 /************* TinyUSB descriptors ****************/
 #define TUSB_DESC_TOTAL_LEN      (TUD_CONFIG_DESC_LEN + CFG_TUD_HID * TUD_HID_DESC_LEN)
@@ -153,56 +129,6 @@ bool usb_keyboard_init(void) {
     return true;
 }
 
-bool usb_keyboard_start_auto_typing(uint8_t key_code, uint32_t interval_ms) {
-    if (!s_initialized) {
-        ESP_LOGE(TAG, "USB keyboard not initialized");
-        return false;
-    }
-
-    if (s_auto_typing_active) {
-        ESP_LOGW(TAG, "Auto-typing already active");
-        return true;
-    }
-
-    // Create timer for key press/release cycle
-    s_key_timer = xTimerCreate("key_timer", pdMS_TO_TICKS(interval_ms), pdTRUE, NULL, key_timer_callback);
-    if (s_key_timer == NULL) {
-        ESP_LOGE(TAG, "Failed to create timer");
-        return false;
-    }
-
-    s_current_key = key_code;
-    s_auto_typing_active = true;
-    s_key_pressed = false;
-
-    // Start the timer
-    if (xTimerStart(s_key_timer, 0) != pdPASS) {
-        ESP_LOGE(TAG, "Failed to start timer");
-        xTimerDelete(s_key_timer, 0);
-        s_key_timer = NULL;
-        s_auto_typing_active = false;
-        return false;
-    }
-
-    ESP_LOGI(TAG, "Auto-typing started - pressing key 0x%02X every %lu ms", key_code, interval_ms);
-    return true;
-}
-
-void usb_keyboard_stop_auto_typing(void) {
-    if (!s_auto_typing_active) {
-        return;
-    }
-
-    if (s_key_timer != NULL) {
-        xTimerStop(s_key_timer, 0);
-        xTimerDelete(s_key_timer, 0);
-        s_key_timer = NULL;
-    }
-
-    s_auto_typing_active = false;
-    s_key_pressed = false;
-    ESP_LOGI(TAG, "Auto-typing stopped");
-}
 
 bool usb_keyboard_press_key(uint8_t key_code) {
     if (!s_initialized || !tud_hid_ready()) {
@@ -210,7 +136,7 @@ bool usb_keyboard_press_key(uint8_t key_code) {
     }
 
     uint8_t keycode[6] = {key_code, 0, 0, 0, 0, 0};
-    tud_hid_keyboard_report(0, 0, keycode);
+    tud_hid_keyboard_report(HID_ITF_PROTOCOL_KEYBOARD, 0, keycode);
     ESP_LOGI(TAG, "Key 0x%02X pressed manually", key_code);
     return true;
 }
@@ -221,7 +147,7 @@ bool usb_keyboard_release_keys(void) {
     }
 
     uint8_t keycode[6] = {0, 0, 0, 0, 0, 0};
-    tud_hid_keyboard_report(0, 0, keycode);
+    tud_hid_keyboard_report(HID_ITF_PROTOCOL_KEYBOARD, 0, keycode);
     ESP_LOGI(TAG, "All keys released");
     return true;
 }
@@ -234,8 +160,6 @@ void usb_keyboard_deinit(void) {
     if (!s_initialized) {
         return;
     }
-
-    usb_keyboard_stop_auto_typing();
     
     // Note: TinyUSB doesn't have an uninstall function in this version
     // The driver will be cleaned up when the system shuts down

@@ -31,15 +31,7 @@ void app_main() {
         return;
     }
 
-#if 0
-    // Start auto-typing the 'A' key every 1000ms
-    if (!usb_keyboard_start_auto_typing(KEY_A, 1000)) {
-        ESP_LOGE(TAG, "Failed to start auto-typing");
-        return;
-    }
-#endif
-    
-    ESP_LOGI(TAG, "USB HID Keyboard started - pressing 'A' key every 5 seconds");
+    ESP_LOGI(TAG, "USB HID Keyboard initialized successfully");
 
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(1000));
