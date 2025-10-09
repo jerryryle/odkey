@@ -15,17 +15,12 @@ extern "C" {
 bool usb_keyboard_init(void);
 
 /**
- * @brief Manually press a key
- * @param key_code HID key code to press
+ * @brief Send keycodes to the USB keyboard
+ * @param keycodes Array of keycodes to send (can be NULL to release all keys)
+ * @param count Number of keycodes in the array (0-6, more than 6 will be truncated)
  * @return true on success, false on failure
  */
-bool usb_keyboard_press_key(uint8_t key_code);
-
-/**
- * @brief Release all keys
- * @return true on success, false on failure
- */
-bool usb_keyboard_release_keys(void);
+bool usb_keyboard_send_keycodes(const uint8_t* keycodes, uint8_t count);
 
 /**
  * @brief Check if USB keyboard is ready

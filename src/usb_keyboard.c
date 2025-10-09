@@ -106,55 +106,35 @@ bool usb_keyboard_init(void) {
     }
     
     s_initialized = true;
+    ESP_LOGI(TAG, "USB keyboard initialized successfully");
     
-    // Test: Send single 'A' key press once device is ready
-    ESP_LOGI(TAG, "Waiting for USB device to be ready...");
+    return true;
+}
+
+
+bool usb_keyboard_send_keycodes(const uint8_t* keycodes, uint8_t count) {
+    if (!s_initialized || !tud_hid_ready()) {
+        return false;
+    }
+
+    uint8_t keycode_array[6] = {0, 0, 0, 0, 0, 0};
+
+    if (keycodes != NULL) {
+        // Copy keycodes to array (up to 6)
+        for (uint8_t i = 0; i < count && i < 6; i++) {
+                keycode_array[i] = keycodes[i];
+            }
+    }
+    
     while (!tud_hid_ready()) {
-        vTaskDelay(pdMS_TO_TICKS(100));
+        vTaskDelay(pdMS_TO_TICKS(1));
     }
-    
-    vTaskDelay(pdMS_TO_TICKS(1000));
 
-    ESP_LOGI(TAG, "USB device ready! Sending single 'A' key press...");
-    
-    // Send single 'A' key press
-    uint8_t keycode[6] = {0x04, 0, 0, 0, 0, 0};
-    tud_hid_keyboard_report(HID_KEYBOARD_REPORT_ID, 0, keycode);
-    
-    // Wait a bit
-    vTaskDelay(pdMS_TO_TICKS(500));
-    
-    // Release the key
-    uint8_t empty_keycode[6] = {0, 0, 0, 0, 0, 0};
-    tud_hid_keyboard_report(HID_KEYBOARD_REPORT_ID, 0, empty_keycode);
-    
-    ESP_LOGI(TAG, "Key press/release sent. Done.");
-    
+    tud_hid_keyboard_report(HID_KEYBOARD_REPORT_ID, 0, keycode_array);
+    ESP_LOGI(TAG, "Sent %d keycodes", count);
     return true;
 }
 
-
-bool usb_keyboard_press_key(uint8_t key_code) {
-    if (!s_initialized || !tud_hid_ready()) {
-        return false;
-    }
-
-    uint8_t keycode[6] = {key_code, 0, 0, 0, 0, 0};
-    tud_hid_keyboard_report(HID_KEYBOARD_REPORT_ID, 0, keycode);
-    ESP_LOGI(TAG, "Key 0x%02X pressed manually", key_code);
-    return true;
-}
-
-bool usb_keyboard_release_keys(void) {
-    if (!s_initialized || !tud_hid_ready()) {
-        return false;
-    }
-
-    uint8_t keycode[6] = {0, 0, 0, 0, 0, 0};
-    tud_hid_keyboard_report(HID_KEYBOARD_REPORT_ID, 0, keycode);
-    ESP_LOGI(TAG, "All keys released");
-    return true;
-}
 
 bool usb_keyboard_is_ready(void) {
     return s_initialized && tud_hid_ready();
