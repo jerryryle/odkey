@@ -44,21 +44,15 @@ void app_main() {
 
     ESP_LOGI(TAG, "USB device ready! Sending single 'A' key press...");
     
-    // Send single 'A' key press using the API
-    uint8_t keys_1[] = {KEY_LEFTSHIFT};
-    usb_keyboard_send_keycodes(keys_1, sizeof(keys_1));
-
-    // Wait a bit
-    vTaskDelay(pdMS_TO_TICKS(10));
-
-    uint8_t keys_2[] = {KEY_LEFTSHIFT, KEY_A};
-    usb_keyboard_send_keycodes(keys_2, sizeof(keys_2));
+    // Send single 'A' key press
+    uint8_t keys[] = {KEY_A};
+    usb_keyboard_send_keys(KEY_MODIFIER_LEFTSHIFT, keys, sizeof(keys));
 
     // Wait a bit
     vTaskDelay(pdMS_TO_TICKS(500));
         
         // Release the key (send empty keycode array)
-    usb_keyboard_send_keycodes(NULL, 0);
+    usb_keyboard_send_keys(0, NULL, 0);
     
     ESP_LOGI(TAG, "Test completed. Entering main loop...");
 

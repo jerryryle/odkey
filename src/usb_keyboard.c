@@ -4,9 +4,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
-#include "tinyusb.h"
-#include "tusb.h"
 #include "tinyusb_default_config.h"
+#include "tinyusb.h"
 #include "sdkconfig.h"
 #include "driver/gpio.h"
 
@@ -112,7 +111,7 @@ bool usb_keyboard_init(void) {
 }
 
 
-bool usb_keyboard_send_keycodes(const uint8_t* keycodes, uint8_t count) {
+bool usb_keyboard_send_keys(uint8_t modifier, const uint8_t* keycodes, uint8_t count) {
     if (!s_initialized || !tud_hid_ready()) {
         return false;
     }
@@ -130,8 +129,7 @@ bool usb_keyboard_send_keycodes(const uint8_t* keycodes, uint8_t count) {
         vTaskDelay(pdMS_TO_TICKS(1));
     }
 
-    tud_hid_keyboard_report(HID_KEYBOARD_REPORT_ID, 0, keycode_array);
-    ESP_LOGI(TAG, "Sent %d keycodes", count);
+    tud_hid_keyboard_report(HID_KEYBOARD_REPORT_ID, modifier, keycode_array);
     return true;
 }
 

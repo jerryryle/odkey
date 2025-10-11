@@ -16,11 +16,12 @@ bool usb_keyboard_init(void);
 
 /**
  * @brief Send keycodes to the USB keyboard
- * @param keycodes Array of keycodes to send (can be NULL to release all keys)
+ * @param modifier Modifier key to send (or 0 to release all modifiers)
+ * @param keys Array of keycodes to send (can be NULL to release all keys)
  * @param count Number of keycodes in the array (0-6, more than 6 will be truncated)
  * @return true on success, false on failure
  */
-bool usb_keyboard_send_keycodes(const uint8_t* keycodes, uint8_t count);
+bool usb_keyboard_send_keys(uint8_t modifier, const uint8_t* keys, uint8_t count);
 
 /**
  * @brief Check if USB keyboard is ready
