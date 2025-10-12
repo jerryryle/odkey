@@ -5,6 +5,7 @@
 #include "driver/gpio.h"
 #include "usb_keyboard.h"
 #include "usb_keyboard_keys.h"
+#include "odkeyscript_vm.h"
 #include "sdkconfig.h"
 
 static const char *TAG = "main";
@@ -42,17 +43,43 @@ void app_main() {
     // Give the system a moment to settle
     vTaskDelay(pdMS_TO_TICKS(1000));
 
-    ESP_LOGI(TAG, "USB device ready! Sending single 'A' key press...");
+    ESP_LOGI(TAG, "USB device ready! Testing ODKeyScript VM...");
     
-    // Send single 'A' key press
-    uint8_t keys[] = {KEY_A};
-    usb_keyboard_send_keys(KEY_MODIFIER_LEFTSHIFT, keys, sizeof(keys));
-
-    // Wait a bit
-    vTaskDelay(pdMS_TO_TICKS(500));
+    // Initialize VM
+    vm_context_t vm_ctx;
+    if (!vm_init(&vm_ctx)) {
+        ESP_LOGE(TAG, "Failed to initialize VM");
+        return;
+    }
+    
+    // Test program: press A, wait 100ms, release A, wait 100ms, press B, wait 100ms, release B
+    // This corresponds to: press A; pause 100; press B; pause 100;
+    uint8_t test_program[] = {
+        // Press A
+        0x10, 0x00, 0x01, 0x04,  // KEYDN: modifier=0, keycount=1, key=KEY_A
+        0x13, 0x64, 0x00,        // WAIT: 100ms
+        0x11, 0x00, 0x01, 0x04,  // KEYUP: modifier=0, keycount=1, key=KEY_A
+        0x13, 0x64, 0x00,        // WAIT: 100ms
+        // Press B
+        0x10, 0x00, 0x01, 0x05,  // KEYDN: modifier=0, keycount=1, key=KEY_B
+        0x13, 0x64, 0x00,        // WAIT: 100ms
+        0x11, 0x00, 0x01, 0x05,  // KEYUP: modifier=0, keycount=1, key=KEY_B
+    };
+    
+    ESP_LOGI(TAG, "Running test program...");
+    vm_error_t result = vm_run(&vm_ctx, test_program, sizeof(test_program));
+    
+    if (result == VM_ERROR_NONE) {
+        ESP_LOGI(TAG, "Test program completed successfully!");
         
-        // Release the key (send empty keycode array)
-    usb_keyboard_send_keys(0, NULL, 0);
+        // Print statistics
+        uint32_t instructions, keys_pressed, keys_released;
+        vm_get_stats(&vm_ctx, &instructions, &keys_pressed, &keys_released);
+        ESP_LOGI(TAG, "VM Stats - Instructions: %lu, Keys Pressed: %lu, Keys Released: %lu", 
+                 instructions, keys_pressed, keys_released);
+    } else {
+        ESP_LOGE(TAG, "Test program failed: %s", vm_error_to_string(result));
+    }
     
     ESP_LOGI(TAG, "Test completed. Entering main loop...");
 
