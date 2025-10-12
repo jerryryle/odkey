@@ -1,0 +1,39 @@
+# ODKeyScript Sample
+# This demonstrates various features of the language
+
+# Set press time to 50ms
+press_time 50
+
+# Type a greeting
+type "Hello, World!"
+
+# Press Enter
+press ENTER
+
+# Hold multiple keys
+keydn M_LEFTSHIFT A B C
+pause 200
+keyup
+
+# Repeat a sequence
+repeat 3 {
+    press DOWN
+    pause 100
+}
+
+# Nested repeat
+repeat 2 {
+    press A
+    repeat 3 {
+        press B
+    }
+    press C
+}
+
+# Type with different press time
+press_time 100
+type "Slow typing"
+
+# Reset to fast
+press_time 30
+type "Fast typing"
