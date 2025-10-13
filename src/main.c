@@ -3,8 +3,10 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "driver/gpio.h"
+#include "usb_core.h"
 #include "usb_keyboard.h"
 #include "usb_keyboard_keys.h"
+#include "program_upload.h"
 #include "odkeyscript_vm.h"
 #include "program_storage.h"
 #include "sdkconfig.h"
@@ -32,17 +34,35 @@ void app_main() {
     gpio_config(&io_conf);
     ESP_LOGI(TAG, "LED configured on GPIO %d", LED_PIN);
 
-    // Initialize USB keyboard module
-    if (!usb_keyboard_init()) {
+    // Initialize program storage
+    if (!program_storage_init()) {
+        ESP_LOGE(TAG, "Failed to initialize program storage");
+        return;
+    }    
+
+    // Initialize USB core module
+    if (!usb_core_init()) {
+        ESP_LOGE(TAG, "Failed to initialize USB core");
+        return;
+    }
+
+    // Initialize USB keyboard module (interface 0)
+    if (!usb_keyboard_init(USB_KEYBOARD_INTERFACE_NUM)) {
         ESP_LOGE(TAG, "Failed to initialize USB keyboard");
         return;
     }
 
-    ESP_LOGI(TAG, "USB HID Keyboard initialized successfully");
+    // Initialize program upload module (interface 1)
+    if (!program_upload_init(USB_PROGRAM_UPLOAD_INTERFACE_NUM)) {
+        ESP_LOGE(TAG, "Failed to initialize program upload");
+        return;
+    }
+
+    ESP_LOGI(TAG, "USB modules initialized successfully");
 
     // Wait for USB device to be ready
     ESP_LOGI(TAG, "Waiting for USB device to be ready...");
-    while (!usb_keyboard_is_ready()) {
+    while (!usb_core_is_ready()) {
         vTaskDelay(pdMS_TO_TICKS(100));
     }
     
@@ -50,13 +70,7 @@ void app_main() {
     vTaskDelay(pdMS_TO_TICKS(1000));
 
     ESP_LOGI(TAG, "USB device ready! Testing ODKeyScript VM...");
-    
-    // Initialize program storage
-    if (!program_storage_init()) {
-        ESP_LOGE(TAG, "Failed to initialize program storage");
-        return;
-    }
-    
+        
     // Initialize VM
     vm_context_t vm_ctx;
     if (!vm_init(&vm_ctx)) {

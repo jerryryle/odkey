@@ -10,9 +10,10 @@ extern "C" {
 
 /**
  * @brief Initialize the USB keyboard module
+ * @param interface_num USB HID interface number to use for keyboard reports
  * @return true on success, false on failure
  */
-bool usb_keyboard_init(void);
+bool usb_keyboard_init(uint8_t interface_num);
 
 /**
  * @brief Send keycodes to the USB keyboard
@@ -29,10 +30,7 @@ bool usb_keyboard_send_keys(uint8_t modifier, const uint8_t* keys, uint8_t count
  */
 bool usb_keyboard_is_ready(void);
 
-/**
- * @brief Deinitialize the USB keyboard module
- */
-void usb_keyboard_deinit(void);
+
 
 #ifdef __cplusplus
 }
