@@ -12,6 +12,11 @@ static const char *TAG = "main";
 
 #define LED_PIN 13
 
+// Delay callback function for VM
+static void delay_callback(uint16_t ms) {
+    vTaskDelay(pdMS_TO_TICKS(ms));
+}
+
 void app_main() {
     ESP_LOGI(TAG, "Starting USB HID Keyboard Demo");
     
@@ -52,24 +57,52 @@ void app_main() {
         return;
     }
     
-    // Test program: press A, wait 100ms, release A, wait 100ms, press B, wait 100ms, release B
-    // This corresponds to: press A; pause 100; press B; pause 100;
+    // Comprehensive test program that exercises all VM opcodes:
+    // 1. Press A (KEYDN/KEYUP)
+    // 2. Repeat B keydn/keyup 3 times (SET_COUNTER, DEC, JNZ)
+    // 3. Final C keydn followed by KEYUP_ALL
     uint8_t test_program[] = {
-        // Press A
+        // 1. Press A
         0x10, 0x00, 0x01, 0x04,  // KEYDN: modifier=0, keycount=1, key=KEY_A
-        0x13, 0x64, 0x00,        // WAIT: 100ms
+        0x13, 0x19, 0x00,        // WAIT: 25ms
         0x11, 0x00, 0x01, 0x04,  // KEYUP: modifier=0, keycount=1, key=KEY_A
-        0x13, 0x64, 0x00,        // WAIT: 100ms
-        // Press B
+        0x13, 0x19, 0x00,        // WAIT: 25ms
+        
+        // 2. Set up loop counter for 3 iterations
+        0x14, 0x00, 0x03, 0x00,  // SET_COUNTER: counter[0] = 3
+        
+        // Loop start (address 18):
         0x10, 0x00, 0x01, 0x05,  // KEYDN: modifier=0, keycount=1, key=KEY_B
-        0x13, 0x64, 0x00,        // WAIT: 100ms
+        0x13, 0x19, 0x00,        // WAIT: 25ms
         0x11, 0x00, 0x01, 0x05,  // KEYUP: modifier=0, keycount=1, key=KEY_B
+        0x13, 0x19, 0x00,        // WAIT: 25ms
+        0x15, 0x00,              // DEC: counter[0]
+        0x16, 0x12, 0x00, 0x00, 0x00, // JNZ: jump to address 18 if counter != 0
+        
+        // 3. Final C keydn followed by KEYUP_ALL
+        0x10, 0x00, 0x01, 0x06,  // KEYDN: modifier=0, keycount=1, key=KEY_C
+        0x13, 0x19, 0x00,        // WAIT: 25ms
+        0x12,                    // KEYUP_ALL: release all keys
     };
+        
+    ESP_LOGI(TAG, "Starting test program...");
+    vm_error_t result = vm_start(&vm_ctx, test_program, sizeof(test_program), usb_keyboard_send_keys, delay_callback);
     
-    ESP_LOGI(TAG, "Running test program...");
-    vm_error_t result = vm_run(&vm_ctx, test_program, sizeof(test_program));
+    if (result != VM_ERROR_NONE) {
+        ESP_LOGE(TAG, "Failed to start VM: %s", vm_error_to_string(result));
+        return;
+    }
     
-    if (result == VM_ERROR_NONE) {
+    // Step through the program
+    while (vm_running(&vm_ctx)) {
+        result = vm_step(&vm_ctx);
+        if (result != VM_ERROR_NONE) {
+            ESP_LOGE(TAG, "VM step failed: %s", vm_error_to_string(result));
+            break;
+        }
+    }
+    
+    if (!vm_has_error(&vm_ctx)) {
         ESP_LOGI(TAG, "Test program completed successfully!");
         
         // Print statistics

@@ -28,6 +28,10 @@ typedef enum {
     VM_STATE_FINISHED
 } vm_state_t;
 
+// Callback function types
+typedef bool (*vm_hid_callback_t)(uint8_t modifier, const uint8_t* keys, uint8_t count);
+typedef void (*vm_delay_callback_t)(uint16_t ms);
+
 // VM Configuration
 #define VM_MAX_COUNTERS 256
 #define VM_MAX_KEYS_PRESSED 6
@@ -55,6 +59,10 @@ typedef struct {
     vm_error_t error;
     bool zero_flag;  // Set when a counter reaches zero, cleared by other operations
     
+    // Callbacks
+    vm_hid_callback_t hid_callback;
+    vm_delay_callback_t delay_callback;
+    
     // Statistics
     uint32_t instructions_executed;
     uint32_t keys_pressed;
@@ -69,13 +77,30 @@ typedef struct {
 bool vm_init(vm_context_t* ctx);
 
 /**
- * @brief Run an ODKeyScript program
+ * @brief Start execution of an ODKeyScript program
  * @param ctx VM context (must be initialized)
  * @param program Pointer to program bytecode
  * @param program_size Size of program in bytes
+ * @param hid_callback Function to call for HID reports
+ * @param delay_callback Function to call for delays
  * @return VM error code
  */
-vm_error_t vm_run(vm_context_t* ctx, const uint8_t* program, size_t program_size);
+vm_error_t vm_start(vm_context_t* ctx, const uint8_t* program, size_t program_size,
+                    vm_hid_callback_t hid_callback, vm_delay_callback_t delay_callback);
+
+/**
+ * @brief Execute the next opcode in the program
+ * @param ctx VM context (must be started)
+ * @return VM error code
+ */
+vm_error_t vm_step(vm_context_t* ctx);
+
+/**
+ * @brief Check if the VM is currently running
+ * @param ctx VM context
+ * @return true if running, false otherwise
+ */
+bool vm_running(const vm_context_t* ctx);
 
 /**
  * @brief Get human-readable error message

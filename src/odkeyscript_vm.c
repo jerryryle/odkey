@@ -17,14 +17,19 @@ static const char *TAG = "odkeyscript_vm";
 #define OPCODE_DEC          0x15
 #define OPCODE_JNZ          0x16
 
-// Helper function to send HID report
-static bool vm_send_hid_report(uint8_t modifier, const uint8_t* keys, uint8_t count) {
-    return usb_keyboard_send_keys(modifier, keys, count);
+// Helper function to send HID report using callback
+static bool vm_send_hid_report(vm_context_t* ctx, uint8_t modifier, const uint8_t* keys, uint8_t count) {
+    if (ctx->hid_callback) {
+        return ctx->hid_callback(modifier, keys, count);
+    }
+    return false;
 }
 
-// Helper function to sleep for specified milliseconds
-static void vm_sleep_ms(uint16_t ms) {
-    vTaskDelay(pdMS_TO_TICKS(ms));
+// Helper function to sleep for specified milliseconds using callback
+static void vm_sleep_ms(vm_context_t* ctx, uint16_t ms) {
+    if (ctx->delay_callback) {
+        ctx->delay_callback(ms);
+    }
 }
 
 // Helper function to read 8-bit value from program memory with bounds checking
@@ -80,7 +85,7 @@ static void vm_release_all_keys(vm_context_t* ctx) {
         ESP_LOGD(TAG, "Releasing all keys (modifier: 0x%02X, keys: %d)", 
                  ctx->current_modifier, ctx->current_key_count);
         
-        vm_send_hid_report(0, NULL, 0);
+        vm_send_hid_report(ctx, 0, NULL, 0);
         ctx->current_modifier = 0;
         ctx->current_key_count = 0;
         memset(ctx->current_keys, 0, sizeof(ctx->current_keys));
@@ -98,6 +103,8 @@ bool vm_init(vm_context_t* ctx) {
     ctx->state = VM_STATE_READY;
     ctx->current_press_time = 50; // Default 50ms press time
     ctx->zero_flag = false;
+    ctx->hid_callback = NULL;
+    ctx->delay_callback = NULL;
     
     ESP_LOGD(TAG, "VM initialized");
     return true;
@@ -111,33 +118,55 @@ void vm_reset(vm_context_t* ctx) {
     // Release any pressed keys before resetting
     vm_release_all_keys(ctx);
     
+    // Save callbacks before reset
+    vm_hid_callback_t hid_cb = ctx->hid_callback;
+    vm_delay_callback_t delay_cb = ctx->delay_callback;
+    
     // Reset all state
     memset(ctx, 0, sizeof(vm_context_t));
     ctx->state = VM_STATE_READY;
     ctx->current_press_time = 50; // Default 50ms press time
     ctx->zero_flag = false;
+    ctx->hid_callback = hid_cb;
+    ctx->delay_callback = delay_cb;
     
     ESP_LOGD(TAG, "VM reset");
 }
 
-vm_error_t vm_run(vm_context_t* ctx, const uint8_t* program, size_t program_size) {
-    if (ctx == NULL || program == NULL || program_size == 0) {
+vm_error_t vm_start(vm_context_t* ctx, const uint8_t* program, size_t program_size,
+                    vm_hid_callback_t hid_callback, vm_delay_callback_t delay_callback) {
+    if (ctx == NULL || program == NULL || program_size == 0 || hid_callback == NULL || delay_callback == NULL) {
         return VM_ERROR_INVALID_PROGRAM;
     }
-    
-    
+        
     // Initialize VM state
     vm_reset(ctx);
     ctx->program = program;
     ctx->program_size = program_size;
     ctx->pc = 0;
     ctx->state = VM_STATE_RUNNING;
+    ctx->hid_callback = hid_callback;
+    ctx->delay_callback = delay_callback;
     
     ESP_LOGI(TAG, "Starting VM execution (program size: %zu bytes)", program_size);
+    return VM_ERROR_NONE;
+}
+
+vm_error_t vm_step(vm_context_t* ctx) {
+    if (ctx == NULL || ctx->state != VM_STATE_RUNNING) {
+        return VM_ERROR_INVALID_PROGRAM;
+    }
     
-    // Main execution loop
-    while (ctx->state == VM_STATE_RUNNING && ctx->pc < ctx->program_size) {
-        uint8_t opcode = program[ctx->pc];
+    // Check if we've reached the end of the program
+    if (ctx->pc >= ctx->program_size) {
+        vm_release_all_keys(ctx);
+        ctx->state = VM_STATE_FINISHED;
+        ESP_LOGI(TAG, "Program completed successfully");
+        return VM_ERROR_NONE;
+    }
+    
+    // Execute next opcode
+        uint8_t opcode = ctx->program[ctx->pc];
         ctx->pc++;
         ctx->instructions_executed++;
         
@@ -166,14 +195,7 @@ vm_error_t vm_run(vm_context_t* ctx, const uint8_t* program, size_t program_size
                     ctx->state = VM_STATE_ERROR;
                     break;
                 }
-                
-                // Send HID report
-                if (!vm_send_hid_report(modifier, keys, key_count)) {
-                    ctx->error = VM_ERROR_HID_ERROR;
-                    ctx->state = VM_STATE_ERROR;
-                    break;
-                }
-                
+                                
                 // Update current state
                 ctx->current_modifier = modifier;
                 ctx->current_key_count = key_count;
@@ -181,6 +203,14 @@ vm_error_t vm_run(vm_context_t* ctx, const uint8_t* program, size_t program_size
                 if (key_count > 0) {
                     memcpy(ctx->current_keys, keys, key_count);
                 }
+
+                // Send HID report
+                if (!vm_send_hid_report(ctx, ctx->current_modifier, ctx->current_keys, ctx->current_key_count)) {
+                    ctx->error = VM_ERROR_HID_ERROR;
+                    ctx->state = VM_STATE_ERROR;
+                    break;
+                }
+
                 vm_clear_zero_flag(ctx);
                 ctx->keys_pressed++;
                 
@@ -210,21 +240,40 @@ vm_error_t vm_run(vm_context_t* ctx, const uint8_t* program, size_t program_size
                     ctx->state = VM_STATE_ERROR;
                     break;
                 }
+                                
+                // Remove keys from current state
+                // Remove modifiers
+                ctx->current_modifier &= ~modifier;
                 
-                // Send HID report
-                if (!vm_send_hid_report(modifier, keys, key_count)) {
+                // Remove keys from current_keys array
+                uint8_t new_keys[VM_MAX_KEYS_PRESSED];
+                uint8_t new_key_count = 0;
+                
+                // Copy keys that are NOT in the release list
+                for (uint8_t i = 0; i < ctx->current_key_count; i++) {
+                    bool should_keep = true;
+                    for (uint8_t j = 0; j < key_count; j++) {
+                        if (ctx->current_keys[i] == keys[j]) {
+                            should_keep = false;
+                            break;
+                        }
+                    }
+                    if (should_keep) {
+                        new_keys[new_key_count++] = ctx->current_keys[i];
+                    }
+                }
+                
+                // Update current keys with filtered list
+                ctx->current_key_count = new_key_count;
+                memcpy(ctx->current_keys, new_keys, new_key_count);
+
+                // Send HID report with updated state
+                if (!vm_send_hid_report(ctx, ctx->current_modifier, ctx->current_keys, ctx->current_key_count)) {
                     ctx->error = VM_ERROR_HID_ERROR;
                     ctx->state = VM_STATE_ERROR;
                     break;
                 }
-                
-                // Update current state
-                ctx->current_modifier = modifier;
-                ctx->current_key_count = key_count;
-                memset(ctx->current_keys, 0, sizeof(ctx->current_keys));
-                if (key_count > 0) {
-                    memcpy(ctx->current_keys, keys, key_count);
-                }
+
                 vm_clear_zero_flag(ctx);
                 ctx->keys_released++;
                 
@@ -250,7 +299,7 @@ vm_error_t vm_run(vm_context_t* ctx, const uint8_t* program, size_t program_size
                 }
                 
                 ESP_LOGD(TAG, "WAIT: %d ms", time_ms);
-                vm_sleep_ms(time_ms);
+                vm_sleep_ms(ctx, time_ms);
                 vm_clear_zero_flag(ctx);
                 break;
             }
@@ -265,7 +314,7 @@ vm_error_t vm_run(vm_context_t* ctx, const uint8_t* program, size_t program_size
                     break;
                 }
                 
-                if (counter_id >= VM_MAX_COUNTERS) {
+                if (counter_id >= (VM_MAX_COUNTERS - 1)) {
                     ctx->error = VM_ERROR_INVALID_ADDRESS;
                     ctx->state = VM_STATE_ERROR;
                     break;
@@ -286,7 +335,7 @@ vm_error_t vm_run(vm_context_t* ctx, const uint8_t* program, size_t program_size
                     break;
                 }
                 
-                if (counter_id >= VM_MAX_COUNTERS) {
+                if (counter_id >= (VM_MAX_COUNTERS - 1)) {
                     ctx->error = VM_ERROR_INVALID_ADDRESS;
                     ctx->state = VM_STATE_ERROR;
                     break;
@@ -319,7 +368,7 @@ vm_error_t vm_run(vm_context_t* ctx, const uint8_t* program, size_t program_size
                 
                 if (!ctx->zero_flag) {
                     ctx->pc = address;
-                    ESP_LOGD(TAG, "JNZ: zero_flag=false, jumping to %d", address);
+                    ESP_LOGD(TAG, "JNZ: zero_flag=false, jumping to %lu", address);
                 } else {
                     ESP_LOGD(TAG, "JNZ: zero_flag=true, not jumping");
                 }
@@ -334,20 +383,18 @@ vm_error_t vm_run(vm_context_t* ctx, const uint8_t* program, size_t program_size
                 break;
             }
         }
-    }
     
-    // Program finished - release any remaining keys
-    if (ctx->state == VM_STATE_RUNNING) {
-        vm_release_all_keys(ctx);
-        ctx->state = VM_STATE_FINISHED;
-        ESP_LOGI(TAG, "Program completed successfully");
-    } else if (ctx->state == VM_STATE_ERROR) {
-        // Release keys even on error
+    // Handle errors
+    if (ctx->state == VM_STATE_ERROR) {
         vm_release_all_keys(ctx);
         ESP_LOGE(TAG, "Program failed with error: %s", vm_error_to_string(ctx->error));
     }
     
     return ctx->error;
+}
+
+bool vm_running(const vm_context_t* ctx) {
+    return ctx != NULL && ctx->state == VM_STATE_RUNNING;
 }
 
 const char* vm_error_to_string(vm_error_t error) {
@@ -387,3 +434,4 @@ void vm_get_stats(const vm_context_t* ctx, uint32_t* instructions_executed,
     if (keys_pressed) *keys_pressed = ctx->keys_pressed;
     if (keys_released) *keys_released = ctx->keys_released;
 }
+
