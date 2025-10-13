@@ -6,6 +6,7 @@
 #include "usb_keyboard.h"
 #include "usb_keyboard_keys.h"
 #include "odkeyscript_vm.h"
+#include "program_storage.h"
 #include "sdkconfig.h"
 
 static const char *TAG = "main";
@@ -50,6 +51,12 @@ void app_main() {
 
     ESP_LOGI(TAG, "USB device ready! Testing ODKeyScript VM...");
     
+    // Initialize program storage
+    if (!program_storage_init()) {
+        ESP_LOGE(TAG, "Failed to initialize program storage");
+        return;
+    }
+    
     // Initialize VM
     vm_context_t vm_ctx;
     if (!vm_init(&vm_ctx)) {
@@ -84,9 +91,22 @@ void app_main() {
         0x13, 0x19, 0x00,        // WAIT: 25ms
         0x12,                    // KEYUP_ALL: release all keys
     };
+    
+    // Load default program from flash
+    size_t program_size;
+    const uint8_t* program = program_storage_get(&program_size);
+    
+    // Use program from flash if available, otherwise use built-in test program
+    if (program == NULL || program_size == 0) {
+        ESP_LOGI(TAG, "No program in storage, using built-in test program");
+        program = test_program;
+        program_size = sizeof(test_program);
+    } else {
+        ESP_LOGI(TAG, "Loaded program from storage (%zu bytes)", program_size);
+    }
         
-    ESP_LOGI(TAG, "Starting test program...");
-    vm_error_t result = vm_start(&vm_ctx, test_program, sizeof(test_program), usb_keyboard_send_keys, delay_callback);
+    ESP_LOGI(TAG, "Starting program...");
+    vm_error_t result = vm_start(&vm_ctx, program, program_size, usb_keyboard_send_keys, delay_callback);
     
     if (result != VM_ERROR_NONE) {
         ESP_LOGE(TAG, "Failed to start VM: %s", vm_error_to_string(result));
