@@ -11,8 +11,7 @@ static const char *TAG = "vm_task";
 // VM task state
 typedef enum {
     VM_TASK_STATE_IDLE,
-    VM_TASK_STATE_RUNNING,
-    VM_TASK_STATE_HALTING
+    VM_TASK_STATE_RUNNING
 } vm_task_state_t;
 
 // Program start request structure
@@ -27,7 +26,6 @@ static QueueHandle_t g_program_queue = NULL;
 static SemaphoreHandle_t g_state_mutex = NULL;
 static EventGroupHandle_t g_halt_event_group = NULL;
 static vm_task_state_t g_task_state = VM_TASK_STATE_IDLE;
-static bool g_halt_requested = false;
 static vm_hid_send_callback_t g_hid_send_callback = NULL;
 
 // VM context (owned by VM task)
@@ -42,7 +40,7 @@ static void delay_callback(uint16_t ms) {
     EventBits_t bits = xEventGroupWaitBits(
         g_halt_event_group,
         HALT_BIT,
-        pdTRUE,  // Clear the bit when we get it
+        pdFALSE, // Don't clear the bit when we get it
         pdFALSE, // Wait for any bit (not all bits)
         pdMS_TO_TICKS(ms)
     );
@@ -53,81 +51,69 @@ static void delay_callback(uint16_t ms) {
     }
 }
 
+// Helper function to check halt request
+static bool halt_requested(void) {
+    EventBits_t bits = xEventGroupGetBits(g_halt_event_group);
+    return (bits & HALT_BIT) != 0;
+}
+
+// Helper function to set task state
+static void set_task_state(vm_task_state_t state) {
+    xSemaphoreTake(g_state_mutex, portMAX_DELAY);
+    g_task_state = state;
+    xSemaphoreGive(g_state_mutex);
+}
+
 // VM task function
 static void vm_task_function(void *pvParameters) {
     (void) pvParameters;
-    
     vm_program_request_t request;
     
+    // Initialize VM context
+    if (!vm_init(&g_vm_context)) {
+        ESP_LOGE(TAG, "Failed to initialize VM context, task exiting");
+        vTaskDelete(NULL);
+        return;
+    }
+    
     for (;;) {
-        // Wait for program start request
-        if (xQueueReceive(g_program_queue, &request, portMAX_DELAY) == pdTRUE) {
-            // Check if we should ignore this request (already running)
-            xSemaphoreTake(g_state_mutex, portMAX_DELAY);
-            if (g_task_state != VM_TASK_STATE_IDLE) {
-                xSemaphoreGive(g_state_mutex);
-                ESP_LOGW(TAG, "Ignoring program start request - already running");
-                continue;
-            }
-            g_task_state = VM_TASK_STATE_RUNNING;
-            g_halt_requested = false;
-            xSemaphoreGive(g_state_mutex);
-            
-            // Clear any pending halt signals
-            xEventGroupClearBits(g_halt_event_group, HALT_BIT);
-            
-            ESP_LOGI(TAG, "Starting program execution (%lu bytes)", (unsigned long)request.program_size);
-            
-            // Initialize VM
-            if (vm_init(&g_vm_context)) {
-                // Start VM
-                vm_error_t result = vm_start(&g_vm_context, request.program, request.program_size, 
-                                           g_hid_send_callback, delay_callback);
-                
-                if (result == VM_ERROR_NONE) {
-                    // Run VM step by step
-                    while (vm_running(&g_vm_context)) {
-                        // Check for halt request
-                        xSemaphoreTake(g_state_mutex, 0);
-                        if (g_halt_requested) {
-                            g_task_state = VM_TASK_STATE_HALTING;
-                            xSemaphoreGive(g_state_mutex);
-                            ESP_LOGI(TAG, "Halt requested, stopping program");
-                            break;
-                        }
-                        xSemaphoreGive(g_state_mutex);
-                        
-                        // Execute one VM step
-                        result = vm_step(&g_vm_context);
-                        if (result != VM_ERROR_NONE) {
-                            ESP_LOGE(TAG, "VM step failed: %s", vm_error_to_string(result));
-                            break;
-                        }
-                    }
-                    
-                    // Program completed or halted
-                    if (g_task_state == VM_TASK_STATE_RUNNING) {
-                        ESP_LOGI(TAG, "Program completed successfully");
-                        
-                        // Print statistics
-                        uint32_t instructions, keys_pressed, keys_released;
-                        vm_get_stats(&g_vm_context, &instructions, &keys_pressed, &keys_released);
-                        ESP_LOGI(TAG, "VM Stats - Instructions: %lu, Keys Pressed: %lu, Keys Released: %lu",
-                                 instructions, keys_pressed, keys_released);
-                    }
-                } else {
-                    ESP_LOGE(TAG, "Failed to start VM: %s", vm_error_to_string(result));
-                }
-            } else {
-                ESP_LOGE(TAG, "Failed to initialize VM");
-            }
-            
-            // Reset state to idle
-            xSemaphoreTake(g_state_mutex, portMAX_DELAY);
-            g_task_state = VM_TASK_STATE_IDLE;
-            g_halt_requested = false;
-            xSemaphoreGive(g_state_mutex);
+        if (xQueueReceive(g_program_queue, &request, portMAX_DELAY) != pdTRUE) {
+            continue;
         }
+                
+        xEventGroupClearBits(g_halt_event_group, HALT_BIT);
+        set_task_state(VM_TASK_STATE_RUNNING);
+        
+        ESP_LOGI(TAG, "Starting program execution (%lu bytes)", (unsigned long)request.program_size);
+        
+        // Start VM
+        if (vm_start(&g_vm_context, request.program, request.program_size, 
+                    g_hid_send_callback, delay_callback) == VM_ERROR_NONE) {
+            
+            // Run VM step by step
+            vm_error_t result = VM_ERROR_NONE;
+            while (vm_running(&g_vm_context) && !halt_requested()) {
+                result = vm_step(&g_vm_context);
+                if (result != VM_ERROR_NONE) {
+                    ESP_LOGE(TAG, "VM step failed: %s", vm_error_to_string(result));
+                    break;
+                }
+            }
+            
+            if (halt_requested()) {
+                ESP_LOGI(TAG, "Program halted by request");
+            } else {
+                ESP_LOGI(TAG, "Program completed successfully");
+                uint32_t instructions, keys_pressed, keys_released;
+                vm_get_stats(&g_vm_context, &instructions, &keys_pressed, &keys_released);
+                ESP_LOGI(TAG, "VM Stats - Instructions: %lu, Keys Pressed: %lu, Keys Released: %lu",
+                         instructions, keys_pressed, keys_released);
+            }            
+        } else {
+            ESP_LOGE(TAG, "Failed to start VM");
+        }
+        
+        set_task_state(VM_TASK_STATE_IDLE);
     }
 }
 
@@ -232,12 +218,7 @@ void vm_task_halt(void) {
         return;
     }
     
-    // Set halt flag
-    xSemaphoreTake(g_state_mutex, portMAX_DELAY);
-    g_halt_requested = true;
-    xSemaphoreGive(g_state_mutex);
-    
-    // Signal the event group to interrupt any ongoing delay
+    // Signal halt via event group
     xEventGroupSetBits(g_halt_event_group, HALT_BIT);
     
     // Wait for task to reach idle state
