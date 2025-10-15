@@ -3,16 +3,16 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "odkeyscript-compiler"
+name = "odkey-tools"
 version = "1.0.0"
-description = "Compiler and tools for the ODKeyScript language"
+description = "ODKey development tools including compiler and USB upload utility"
 readme = "README.md"
 requires-python = ">=3.12"
 license = {text = "MIT"}
 authors = [
     {name = "ODKey Project", email = "odkey@example.com"},
 ]
-keywords = ["compiler", "keyboard", "macro", "usb", "hid"]
+keywords = ["compiler", "keyboard", "macro", "usb", "hid", "upload", "tools"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -25,15 +25,20 @@ classifiers = [
     "Topic :: System :: Hardware :: Hardware Drivers",
 ]
 
+dependencies = [
+    "hidapi>=0.14.0",
+]
+
 [project.scripts]
-odkeyscript-compile = "odkeyscript.odkeyscript_compiler:main"
-odkeyscript-disassemble = "odkeyscript.odkeyscript_disassembler:main"
-odkeyscript-test = "odkeyscript.test_compiler:test_compiler"
+odkey = "odkey:main"
 
 [dependency-groups]
 dev = [
     "flake8>=6.0.0",
     "mypy>=1.0.0",
+    "hidapi-stubs>=0.14.0",
+    "isort>=7.0.0",
+    "black>=25.9.0",
 ]
 
 [project.urls]
@@ -72,7 +77,6 @@ extend-exclude = '''
 profile = "black"
 multi_line_output = 3
 line_length = 88
-known_first_party = ["odkeyscript_compiler", "disassemble", "test_compiler"]
 
 [tool.pytest.ini_options]
 testpaths = ["."]
