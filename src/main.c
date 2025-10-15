@@ -10,6 +10,8 @@
 #include "vm_task.h"
 #include "button_handler.h"
 #include "program_storage.h"
+#include "http_api.h"
+#include "nvs_flash.h"
 #include "sdkconfig.h"
 
 static const char *TAG = "main";
@@ -74,12 +76,21 @@ static void on_button_press(void) {
 
 void app_main() {
     ESP_LOGI(TAG, "Starting ODKey");
-
+    
+    // Initialize NVS
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(ret);
+    ESP_LOGI(TAG, "NVS initialized");
+    
     // Initialize program storage
     if (!program_storage_init()) {
         ESP_LOGE(TAG, "Failed to initialize program storage");
         return;
-    }    
+    }
 
     // Initialize USB core module
     if (!usb_core_init()) {
@@ -121,6 +132,12 @@ void app_main() {
     // Initialize button handler
     if (!button_handler_init(BUTTON_GPIO, BUTTON_DEBOUNCE_MS, on_button_press)) {
         ESP_LOGE(TAG, "Failed to initialize button handler");
+        return;
+    }
+
+    // Initialize HTTP API module
+    if (!http_api_init()) {
+        ESP_LOGE(TAG, "Failed to initialize HTTP API module");
         return;
     }
 
