@@ -30,6 +30,7 @@ RESP_ERROR = 0x21
 
 # USB HID constants
 RAW_HID_REPORT_SIZE = 64
+DATA_PAYLOAD_SIZE = 60  # 60 bytes of data payload (bytes 4-63)
 USB_VID = 0x1234  # Placeholder - should match actual device VID
 USB_PID = 0x5678  # Placeholder - should match actual device PID
 
@@ -101,13 +102,13 @@ class ODKeyUploader:
             print(f"Error finding device: {e}")
             return False
 
-    def send_command(self, report_id: int, data: bytes) -> Tuple[bool, bytes]:
+    def send_command(self, command: int, data: bytes) -> Tuple[bool, bytes]:
         """
         Send a command to the device and wait for response
 
         Args:
-            report_id: Report ID for the command
-            data: Command data (will be padded to 64 bytes)
+            command: Command code for the command
+            data: Command data (will be placed in bytes 4-63)
 
         Returns:
             Tuple of (success, response_data)
@@ -117,8 +118,9 @@ class ODKeyUploader:
 
         # Prepare command packet (64 bytes total)
         packet = bytearray(RAW_HID_REPORT_SIZE)
-        packet[0] = report_id
-        packet[1 : 1 + len(data)] = data
+        packet[0] = command  # Command code in first byte
+        # Bytes 1-3 reserved for future use
+        packet[4 : 4 + len(data)] = data  # Data payload in bytes 4-63
 
         try:
             # Send command
@@ -173,18 +175,20 @@ class ODKeyUploader:
             print("Failed to start write session")
             return False
 
-        # Step 2: Send data in 64-byte chunks
+        # Step 2: Send data in 60-byte chunks
         bytes_sent = 0
         chunk_count = 0
 
         while bytes_sent < program_size:
-            # Calculate chunk size (64 bytes minus 1 for report ID)
-            chunk_size = min(63, program_size - bytes_sent)
+            # Calculate chunk size (60 bytes of data payload)
+            chunk_size = min(DATA_PAYLOAD_SIZE, program_size - bytes_sent)
             chunk_data = program_data[bytes_sent : bytes_sent + chunk_size]
 
-            # Pad chunk to 63 bytes if needed
-            if len(chunk_data) < 63:
-                chunk_data = chunk_data + b"\x00" * (63 - len(chunk_data))
+            # Pad chunk to 60 bytes if needed
+            if len(chunk_data) < DATA_PAYLOAD_SIZE:
+                chunk_data = chunk_data + b"\x00" * (
+                    DATA_PAYLOAD_SIZE - len(chunk_data)
+                )
 
             print(f"Sending chunk {chunk_count + 1} ({chunk_size} bytes)...")
             success, response = self.send_command(CMD_WRITE_CHUNK, chunk_data)

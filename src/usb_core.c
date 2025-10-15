@@ -17,14 +17,7 @@ static const char *TAG = "usb_core";
 static bool g_initialized = false;
 
 #define HID_KEYBOARD_REPORT_ID 1
-#define RAW_HID_REPORT_SIZE 64  // 64 bytes for full flash alignment
-
-// Report IDs for Raw HID commands/responses
-#define CMD_WRITE_START   0x10  // Start write session (erase + init)
-#define CMD_WRITE_CHUNK   0x11  // Write 64-byte data chunk
-#define CMD_WRITE_FINISH  0x12  // Finish write (commit with program size)
-#define RESP_OK           0x20  // Success response
-#define RESP_ERROR        0x21  // Error response
+#define RAW_HID_REPORT_SIZE 64 // 64 bytes for full flash alignment
 
 /************* TinyUSB descriptors ****************/
 #define TUSB_DESC_TOTAL_LEN (TUD_CONFIG_DESC_LEN + 2 * TUD_HID_DESC_LEN)
@@ -33,51 +26,26 @@ static bool g_initialized = false;
  * @brief Keyboard HID report descriptor (Interface 0)
  */
 const uint8_t keyboard_report_descriptor[] = {
-    TUD_HID_REPORT_DESC_KEYBOARD(HID_REPORT_ID(HID_KEYBOARD_REPORT_ID))
-};
+    TUD_HID_REPORT_DESC_KEYBOARD(HID_REPORT_ID(HID_KEYBOARD_REPORT_ID))};
 
 /**
  * @brief Raw HID report descriptor (Interface 1)
  */
 const uint8_t raw_hid_report_descriptor[] = {
-    0x06, 0x00, 0xFF,  // Usage Page (Vendor Defined)
-    0x09, 0x01,        // Usage (Vendor Usage 1)
-    0xA1, 0x01,        // Collection (Application)
-    
-    // CMD_WRITE_START (OUT report)
-    0x85, CMD_WRITE_START, // Report ID
-    0x09, 0x02,        // Usage (Vendor Usage 2)
-    0x15, 0x00,        // Logical Minimum (0)
-    0x26, 0xFF, 0x00,  // Logical Maximum (255)
-    0x75, 0x08,        // Report Size (8 bits)
+    0x06, 0x00, 0xFF, // Usage Page (Vendor Defined)
+    0x09, 0x01,       // Usage (Vendor Usage 1)
+    0xA1, 0x01,       // Collection (Application)
+
+    // 64-byte raw HID report
+    0x09, 0x02,                // Usage (Vendor Usage 2)
+    0x15, 0x00,                // Logical Minimum (0)
+    0x26, 0xFF, 0x00,          // Logical Maximum (255)
+    0x75, 0x08,                // Report Size (8 bits)
     0x95, RAW_HID_REPORT_SIZE, // Report Count (64 bytes)
-    0x91, 0x02,        // Output (Data, Variable, Absolute)
-    
-    // CMD_WRITE_CHUNK (OUT report)
-    0x85, CMD_WRITE_CHUNK, // Report ID
-    0x09, 0x02,        // Usage (Vendor Usage 2)
-    0x95, RAW_HID_REPORT_SIZE, // Report Count (64 bytes)
-    0x91, 0x02,        // Output (Data, Variable, Absolute)
-    
-    // CMD_WRITE_FINISH (OUT report)
-    0x85, CMD_WRITE_FINISH, // Report ID
-    0x09, 0x02,        // Usage (Vendor Usage 2)
-    0x95, RAW_HID_REPORT_SIZE, // Report Count (64 bytes)
-    0x91, 0x02,        // Output (Data, Variable, Absolute)
-    
-    // RESP_OK (IN report)
-    0x85, RESP_OK,     // Report ID
-    0x09, 0x03,        // Usage (Vendor Usage 3)
-    0x95, RAW_HID_REPORT_SIZE, // Report Count (64 bytes)
-    0x81, 0x02,        // Input (Data, Variable, Absolute)
-    
-    // RESP_ERROR (IN report)
-    0x85, RESP_ERROR,  // Report ID
-    0x09, 0x03,        // Usage (Vendor Usage 3)
-    0x95, RAW_HID_REPORT_SIZE, // Report Count (64 bytes)
-    0x81, 0x02,        // Input (Data, Variable, Absolute)
-    
-    0xC0               // End Collection
+    0x91, 0x02,                // Output (Data, Variable, Absolute)
+    0x81, 0x02,                // Input (Data, Variable, Absolute)
+
+    0xC0 // End Collection
 };
 
 /**
@@ -85,11 +53,11 @@ const uint8_t raw_hid_report_descriptor[] = {
  */
 const char *hid_string_descriptor[6] = {
     // array of pointer to string descriptors
-    (char[]){0x09, 0x04},   // 0: is supported language is English (0x0409)
-    "Jerry",                // 1: Manufacturer
-    "ODKey",                // 2: Product
-    "123456",               // 3: Serial #
-    "ODKey Keyboard",       // 4: HID Keyboard
+    (char[]){0x09, 0x04},          // 0: is supported language is English (0x0409)
+    "Jerry",                       // 1: Manufacturer
+    "ODKey",                       // 2: Product
+    "123456",                      // 3: Serial #
+    "ODKey Keyboard",              // 4: HID Keyboard
     "ODKey Programming Interface", // 5: HID Programming
 };
 
@@ -113,10 +81,14 @@ static const uint8_t hid_configuration_descriptor[] = {
 
 // Invoked when GET HID REPORT DESCRIPTOR request is received
 // Application returns a pointer to the descriptor
-uint8_t const * tud_hid_descriptor_report_cb(uint8_t instance) {
-    if (instance == 0) {
+uint8_t const *tud_hid_descriptor_report_cb(uint8_t instance)
+{
+    if (instance == 0)
+    {
         return keyboard_report_descriptor;
-    } else if (instance == 1) {
+    }
+    else if (instance == 1)
+    {
         return raw_hid_report_descriptor;
     }
     return NULL;
@@ -125,56 +97,66 @@ uint8_t const * tud_hid_descriptor_report_cb(uint8_t instance) {
 // Invoked when received GET_REPORT control request
 // Application must fill buffer report's content and return its length.
 // Return zero will cause the stack to STALL request
-uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_t report_type, uint8_t *buffer, uint16_t reqlen) {
-    (void) instance;
-    (void) report_id;
-    (void) report_type;
-    (void) buffer;
-    (void) reqlen;
+uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_t report_type, uint8_t *buffer, uint16_t reqlen)
+{
+    (void)instance;
+    (void)report_id;
+    (void)report_type;
+    (void)buffer;
+    (void)reqlen;
     return 0;
 }
 
 // Invoked when received SET_REPORT control request or
 // received data on OUT endpoint ( Report ID = 0, Type = 0 )
-void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_t report_type, uint8_t const* buffer, uint16_t bufsize) {
-    (void) report_type;
-    
-    // Route to appropriate module based on interface and report ID
-    if (instance == USB_KEYBOARD_INTERFACE_NUM) {
+void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_t report_type, uint8_t const *buffer, uint16_t bufsize)
+{
+    (void)report_type;
+    (void)report_id; // No report IDs in new protocol
+
+    // Route to appropriate module based on interface
+    if (instance == USB_KEYBOARD_INTERFACE_NUM)
+    {
         // Interface 0: Keyboard - no incoming reports expected
-        ESP_LOGW(TAG, "Unexpected report on keyboard interface: report_id=%d", report_id);
-    } else if (instance == USB_PROGRAM_UPLOAD_INTERFACE_NUM) {
+        ESP_LOGW(TAG, "Unexpected report on keyboard interface");
+    }
+    else if (instance == USB_PROGRAM_UPLOAD_INTERFACE_NUM)
+    {
         // Interface 1: Raw HID - route to program upload module
-        program_upload_process_command(report_id, buffer, bufsize);
+        program_upload_process_command(buffer, bufsize);
     }
 }
 
 // Invoked when received SET_PROTOCOL request
-void tud_hid_set_protocol_cb(uint8_t instance, uint8_t protocol) {
-    (void) instance;
-    (void) protocol;
+void tud_hid_set_protocol_cb(uint8_t instance, uint8_t protocol)
+{
+    (void)instance;
+    (void)protocol;
 }
 
-bool usb_core_init(void) {
-    if (g_initialized) {
+bool usb_core_init(void)
+{
+    if (g_initialized)
+    {
         return true;
     }
 
     // Initialize TinyUSB with default configuration
     tinyusb_config_t tusb_cfg = TINYUSB_DEFAULT_CONFIG();
-    
+
     // Override specific descriptor fields
-    tusb_cfg.descriptor.device = NULL;  // Use default device descriptor
+    tusb_cfg.descriptor.device = NULL; // Use default device descriptor
     tusb_cfg.descriptor.full_speed_config = hid_configuration_descriptor;
     tusb_cfg.descriptor.string = hid_string_descriptor;
     tusb_cfg.descriptor.string_count = sizeof(hid_string_descriptor) / sizeof(hid_string_descriptor[0]);
 #if (TUD_OPT_HIGH_SPEED)
     tusb_cfg.descriptor.high_speed_config = hid_configuration_descriptor;
-#endif // TUD_OPT_HIGH_SPEED        
+#endif // TUD_OPT_HIGH_SPEED
 
     esp_err_t ret = tinyusb_driver_install(&tusb_cfg);
 
-    if (ret != ESP_OK) {
+    if (ret != ESP_OK)
+    {
         ESP_LOGE(TAG, "Failed to install TinyUSB driver: %s", esp_err_to_name(ret));
         return false;
     }
@@ -185,7 +167,7 @@ bool usb_core_init(void) {
     return true;
 }
 
-bool usb_core_is_ready(void) {
+bool usb_core_is_ready(void)
+{
     return g_initialized && tud_hid_ready();
 }
-
