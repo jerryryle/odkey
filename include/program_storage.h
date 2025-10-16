@@ -1,9 +1,9 @@
 #ifndef PROGRAM_STORAGE_H
 #define PROGRAM_STORAGE_H
 
-#include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -22,13 +22,14 @@ bool program_storage_init(void);
  * @param out_size Pointer to store program size
  * @return Pointer to program data in flash, or NULL if no program or error
  */
-const uint8_t* program_storage_get(size_t* out_size);
+const uint8_t *program_storage_get(size_t *out_size);
 
 /**
- * @brief Start writing a new program to flash (erases partition first)
+ * @brief Start writing a new program to flash (erases only necessary sectors)
+ * @param expected_program_size The expected size of the program to be written
  * @return true on success, false on failure
  */
-bool program_storage_write_start(void);
+bool program_storage_write_start(size_t expected_program_size);
 
 /**
  * @brief Write a chunk of program data to flash
@@ -36,7 +37,7 @@ bool program_storage_write_start(void);
  * @param chunk_size Size of chunk in bytes (must be multiple of 4 for ESP32 flash alignment)
  * @return true on success, false on failure
  */
-bool program_storage_write_chunk(const uint8_t* chunk, size_t chunk_size);
+bool program_storage_write_chunk(const uint8_t *chunk, size_t chunk_size);
 
 /**
  * @brief Finish writing program to flash (commits the size header, which marks the program as "valid")
@@ -55,4 +56,4 @@ bool program_storage_erase(void);
 }
 #endif
 
-#endif // PROGRAM_STORAGE_H
+#endif  // PROGRAM_STORAGE_H

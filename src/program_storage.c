@@ -1,9 +1,9 @@
 #include "program_storage.h"
+#include <string.h>
+#include "esp_flash.h"
 #include "esp_log.h"
 #include "esp_partition.h"
-#include "esp_flash.h"
 #include "spi_flash_mmap.h"
-#include <string.h>
 
 static const char *TAG = "program_storage";
 
@@ -19,52 +19,51 @@ static struct {
 
 bool program_storage_init(void) {
     // Find the program storage partition
-    g_program_partition = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, 
-                                                   ESP_PARTITION_SUBTYPE_DATA_UNDEFINED, 
+    g_program_partition = esp_partition_find_first(ESP_PARTITION_TYPE_DATA,
+                                                   ESP_PARTITION_SUBTYPE_DATA_UNDEFINED,
                                                    PROGRAM_STORAGE_PARTITION_LABEL);
-    
+
     if (g_program_partition == NULL) {
         ESP_LOGE(TAG, "Failed to find program storage partition: %s", PROGRAM_STORAGE_PARTITION_LABEL);
         return false;
     }
-    
-    ESP_LOGI(TAG, "Found program storage partition: %s (size: %lu bytes)", 
-             g_program_partition->label, (unsigned long)g_program_partition->size);
-    
+
+    ESP_LOGI(TAG, "Found program storage partition: %s (size: %lu bytes)", g_program_partition->label, (unsigned long)g_program_partition->size);
+
     return true;
 }
 
-const uint8_t* program_storage_get(size_t* out_size) {
+const uint8_t *program_storage_get(size_t *out_size) {
     if (g_program_partition == NULL) {
         ESP_LOGE(TAG, "Program storage not initialized");
-        if (out_size) *out_size = 0;
+        if (out_size)
+            *out_size = 0;
         return NULL;
     }
-    
+
     if (out_size == NULL) {
         ESP_LOGE(TAG, "out_size parameter cannot be NULL");
         return NULL;
     }
-    
+
     // Map the partition to memory for reading
-    const void* partition_data;
+    const void *partition_data;
     esp_partition_mmap_handle_t mmap_handle;
-    
-    esp_err_t ret = esp_partition_mmap(g_program_partition, 0, g_program_partition->size,
-                                       ESP_PARTITION_MMAP_DATA, &partition_data, &mmap_handle);
-    
+
+    esp_err_t ret = esp_partition_mmap(g_program_partition, 0, g_program_partition->size, ESP_PARTITION_MMAP_DATA, &partition_data, &mmap_handle);
+
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to mmap partition: %s", esp_err_to_name(ret));
         *out_size = 0;
         return NULL;
     }
-    
-    const uint8_t* data = (const uint8_t*)partition_data;
-    
+
+    const uint8_t *data = (const uint8_t *)partition_data;
+
     // Read program size from first 4 bytes
     uint32_t program_size = 0;
     memcpy(&program_size, data, sizeof(program_size));
-    
+
     // Check if partition is empty (all zeros) or has invalid size
     if (program_size == 0 || program_size > PROGRAM_STORAGE_MAX_SIZE - sizeof(program_size)) {
         ESP_LOGD(TAG, "No valid program in storage (size: %lu)", (unsigned long)program_size);
@@ -72,60 +71,83 @@ const uint8_t* program_storage_get(size_t* out_size) {
         *out_size = 0;
         return NULL;
     }
-    
+
     ESP_LOGI(TAG, "Found program in storage: %lu bytes", (unsigned long)program_size);
     *out_size = program_size;
-    
+
     // Return pointer to program data (skip the 4-byte size header)
     return data + sizeof(program_size);
 }
 
-bool program_storage_write_start(void) {
+bool program_storage_write_start(size_t expected_program_size) {
     if (g_program_partition == NULL) {
         ESP_LOGE(TAG, "Program storage not initialized");
         return false;
     }
 
-    ESP_LOGI(TAG, "Starting chunked write");
+    // Validate expected program size
+    if (expected_program_size == 0) {
+        ESP_LOGE(TAG, "Expected program size cannot be zero");
+        return false;
+    }
 
-    // Erase the partition first
-    esp_err_t ret = esp_partition_erase_range(g_program_partition, 0, g_program_partition->size);
+    if (expected_program_size > PROGRAM_STORAGE_MAX_SIZE - sizeof(uint32_t)) {
+        ESP_LOGE(TAG, "Expected program size too large: %lu bytes (max: %lu)", (unsigned long)expected_program_size, (unsigned long)(PROGRAM_STORAGE_MAX_SIZE - sizeof(uint32_t)));
+        return false;
+    }
+
+    // Calculate total size needed (program + size header)
+    size_t total_size_needed = expected_program_size + sizeof(uint32_t);
+
+    // Calculate sectors needed (round up to 4KB boundaries)
+    // ESP32 flash sectors are 4KB (0x1000 bytes)
+    size_t sectors_needed = (total_size_needed + 4095) / 4096;
+    size_t erase_size = sectors_needed * 4096;
+
+    // Ensure we don't exceed partition size
+    if (erase_size > g_program_partition->size) {
+        erase_size = g_program_partition->size;
+    }
+
+    ESP_LOGI(TAG, "Starting chunked write (program: %lu bytes, erasing: %lu bytes, sectors: %lu)", (unsigned long)expected_program_size, (unsigned long)erase_size, (unsigned long)sectors_needed);
+
+    // Erase only the necessary sectors
+    esp_err_t ret = esp_partition_erase_range(g_program_partition, 0, erase_size);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to erase partition: %s", esp_err_to_name(ret));
+        ESP_LOGE(TAG, "Failed to erase partition range: %s", esp_err_to_name(ret));
         return false;
     }
 
     // Initialize write state
-    g_write_state.bytes_written = sizeof(uint32_t); // Skip over the program size header
+    g_write_state.bytes_written = sizeof(uint32_t);  // Skip over the program size header
 
     return true;
 }
 
-bool program_storage_write_chunk(const uint8_t* chunk, size_t chunk_size) {
+bool program_storage_write_chunk(const uint8_t *chunk, size_t chunk_size) {
     if (g_program_partition == NULL) {
         ESP_LOGE(TAG, "Program storage not initialized");
         return false;
     }
-    
+
     if (chunk == NULL || chunk_size == 0 || chunk_size % 4 != 0) {
         ESP_LOGE(TAG, "Chunk data cannot be NULL, zero, or not multiple of 4 bytes");
         return false;
     }
-    
+
     if (g_write_state.bytes_written + chunk_size > PROGRAM_STORAGE_MAX_SIZE) {
         ESP_LOGE(TAG, "Chunk would exceed partition size");
         return false;
     }
-    
+
     esp_err_t ret = esp_partition_write(g_program_partition, g_write_state.bytes_written, chunk, chunk_size);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to write chunk: %s", esp_err_to_name(ret));
         return false;
     }
-    
+
     g_write_state.bytes_written += chunk_size;
-    ESP_LOGD(TAG, "Wrote chunk: %lu bytes (total: %lu)",
-             (unsigned long)chunk_size, (unsigned long)g_write_state.bytes_written);
+    ESP_LOGD(TAG, "Wrote chunk: %lu bytes (total: %lu)", (unsigned long)chunk_size, (unsigned long)g_write_state.bytes_written);
 
     return true;
 }
@@ -142,16 +164,14 @@ bool program_storage_write_finish(size_t program_size) {
     }
 
     if (program_size > PROGRAM_STORAGE_MAX_SIZE - sizeof(uint32_t)) {
-        ESP_LOGE(TAG, "Program too large: %lu bytes (max: %lu)",
-                 (unsigned long)program_size, (unsigned long)(PROGRAM_STORAGE_MAX_SIZE - sizeof(uint32_t)));
+        ESP_LOGE(TAG, "Program too large: %lu bytes (max: %lu)", (unsigned long)program_size, (unsigned long)(PROGRAM_STORAGE_MAX_SIZE - sizeof(uint32_t)));
         return false;
     }
 
     // Check if we wrote at least the expected amount of program data
     size_t actual_program_bytes = g_write_state.bytes_written - sizeof(uint32_t);
     if (actual_program_bytes < program_size) {
-        ESP_LOGE(TAG, "Write incomplete: wrote %lu bytes, expected at least %lu",
-                 (unsigned long)actual_program_bytes, (unsigned long)program_size);
+        ESP_LOGE(TAG, "Write incomplete: wrote %lu bytes, expected at least %lu", (unsigned long)actual_program_bytes, (unsigned long)program_size);
         return false;
     }
 
@@ -172,16 +192,16 @@ bool program_storage_erase(void) {
         ESP_LOGE(TAG, "Program storage not initialized");
         return false;
     }
-    
+
     ESP_LOGI(TAG, "Erasing program from storage");
-    
+
     // Erase the entire partition
     esp_err_t ret = esp_partition_erase_range(g_program_partition, 0, g_program_partition->size);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to erase partition: %s", esp_err_to_name(ret));
         return false;
     }
-    
+
     ESP_LOGI(TAG, "Successfully erased program from storage");
     return true;
 }
