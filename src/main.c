@@ -83,6 +83,10 @@ bool send_keys_when_ready(uint8_t modifier, const uint8_t *keys, uint8_t count) 
     return usb_keyboard_send_keys(modifier, keys, count);
 }
 
+bool on_program_upload_start(void) {
+    return vm_task_halt();
+}
+
 void app_main() {
     ESP_LOGI(TAG, "Starting ODKey");
 
@@ -114,7 +118,7 @@ void app_main() {
     }
 
     // Initialize program upload module (interface 1)
-    if (!program_upload_init(USB_PROGRAM_UPLOAD_INTERFACE_NUM)) {
+    if (!program_upload_init(USB_PROGRAM_UPLOAD_INTERFACE_NUM, on_program_upload_start)) {
         ESP_LOGE(TAG, "Failed to initialize program upload");
         return;
     }

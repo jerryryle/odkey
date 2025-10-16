@@ -26,14 +26,16 @@ static struct
     size_t expected_program_size;
     size_t bytes_written;
     uint8_t interface_num;
+    program_upload_start_callback_t on_upload_start;
 } g_upload_state = {0};
 
-bool program_upload_init(uint8_t interface_num) {
+bool program_upload_init(uint8_t interface_num, program_upload_start_callback_t on_upload_start) {
     // Reset upload state
     g_upload_state.state = UPLOAD_STATE_IDLE;
     g_upload_state.expected_program_size = 0;
     g_upload_state.bytes_written = 0;
     g_upload_state.interface_num = interface_num;
+    g_upload_state.on_upload_start = on_upload_start;
 
     ESP_LOGI(TAG, "Program upload module initialized on interface %d", interface_num);
     return true;
@@ -67,6 +69,16 @@ static void handle_write_start(uint32_t program_size) {
         ESP_LOGE(TAG, "Invalid program size: %lu", (unsigned long)program_size);
         send_response(RESP_ERROR);
         return;
+    }
+
+    // Notify that program upload is starting
+    if (g_upload_state.on_upload_start) {
+        ESP_LOGI(TAG, "Program upload starting - notifying callback");
+        if (!g_upload_state.on_upload_start()) {
+            ESP_LOGW(TAG, "Program upload aborted by callback");
+            send_response(RESP_ERROR);
+            return;
+        }
     }
 
     // Calculate storage size needed (round up to 60-byte chunk boundary)
