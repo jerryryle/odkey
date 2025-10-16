@@ -15,11 +15,23 @@ KEYDN M_LEFTSHIFT A B C D E F # Presses left shift and abcdef keys all together
 All commands are case sensitive. They can appear anywhere on a line, but a line may only contain one command.
 
 ### press_time
-The `press_time` command sets the time, in milliseconds that keys are "pressed" for commands such as `type`. This can be set more than once within a script and it applies to all relevant commands that come after it. Note that very short press times may be unreliable, depending upon the OS and application. ODKey defaults the press time to 30ms.
+The `press_time` command sets the time, in milliseconds that keys are "pressed" for commands such as `press` and `type`. This can be set more than once within a script and it applies to all relevant commands that come after it. Note that very short press times may be unreliable, depending upon the OS and application. ODKey defaults the press time to 30ms.
 Example:
 ```
 press_time 30
 press ENTER # Short press of enter
+press_time 100
+press A # Longer press of enter
+```
+
+### interkey_time
+The `interkey_time` command sets the time, in milliseconds between the last key up and the next key down for sequence commands such as `type`. This can be set more than once within a script and it applies to all relevant commands that come after it. Note that very short interkey times may be unreliable, depending upon the OS and application. ODKey defaults the interkey time to 30ms.
+Example:
+```
+press_time 50
+interkey_time 50
+# Keys are pressed for 50 ms and there's a delay of 50ms between keystrokes.
+type Hello World!
 press_time 100
 press A # Longer press of enter
 ```

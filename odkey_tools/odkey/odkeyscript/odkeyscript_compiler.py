@@ -353,6 +353,7 @@ class Lexer:
         # Determine token type
         if identifier in [
             "press_time",
+            "interkey_time",
             "keydn",
             "keyup",
             "press",
@@ -379,6 +380,7 @@ class Compiler:
     def __init__(self) -> None:
         self.bytecode: List[int] = []
         self.current_press_time: int = 30  # Default 30ms
+        self.current_interkey_time: int = 30  # Default 30ms
         self.counter_index: int = 0
         self.max_counters: int = 256
         self.loop_stack: List[Tuple[int, int, int]] = (
@@ -414,6 +416,8 @@ class Compiler:
         if token.type == TokenType.COMMAND:
             if token.value == "press_time":
                 self._compile_press_time(lexer)
+            elif token.value == "interkey_time":
+                self._compile_interkey_time(lexer)
             elif token.value == "keydn":
                 self._compile_keydn(lexer)
             elif token.value == "keyup":
@@ -455,6 +459,28 @@ class Compiler:
             )
 
         self.current_press_time = time_value
+        lexer.tokens.pop(0)  # Remove number
+
+    def _compile_interkey_time(self, lexer: Lexer) -> None:
+        """Compile interkey_time command"""
+        lexer.tokens.pop(0)  # Remove 'interkey_time'
+
+        if not lexer.tokens or lexer.tokens[0].type != TokenType.NUMBER:
+            raise CompileError(
+                "Expected number after interkey_time",
+                lexer.tokens[0].line,
+                lexer.tokens[0].column,
+            )
+
+        time_value = int(lexer.tokens[0].value)
+        if time_value < 0 or time_value > 65535:
+            raise CompileError(
+                "interkey_time must be between 0 and 65535",
+                lexer.tokens[0].line,
+                lexer.tokens[0].column,
+            )
+
+        self.current_interkey_time = time_value
         lexer.tokens.pop(0)  # Remove number
 
     def _compile_keydn(self, lexer: Lexer) -> None:
@@ -614,8 +640,8 @@ class Compiler:
         string = lexer.tokens[0].value
         lexer.tokens.pop(0)  # Remove string
 
-        # For each character, emit KEYDN + WAIT + KEYUP
-        for char in string:
+        # For each character, emit KEYDN + WAIT + KEYUP + interkey_time
+        for i, char in enumerate(string):
             if char == " ":
                 # Space key
                 self.bytecode.append(Opcode.KEYDN.value)
@@ -646,6 +672,11 @@ class Compiler:
                 self.bytecode.append(modifiers)
                 self.bytecode.append(1)  # One key
                 self.bytecode.append(key_code)
+
+            # Add interkey_time delay between keystrokes (except after the last character)
+            if i < len(string) - 1:
+                self.bytecode.append(Opcode.WAIT.value)
+                self.bytecode.extend(self._uint16_to_bytes(self.current_interkey_time))
 
     def _compile_repeat(self, lexer: Lexer) -> None:
         """Compile repeat command"""

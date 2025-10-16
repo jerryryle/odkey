@@ -44,6 +44,11 @@ def test_compiler() -> None:
             "description": "Set different press times",
         },
         {
+            "name": "Interkey time setting",
+            "source": 'press_time 50\ninterkey_time 100\ntype "Hi"',
+            "description": "Set interkey time for delays between keystrokes",
+        },
+        {
             "name": "Nested repeat",
             "source": "repeat 2 {\n    press A\n    repeat 3 {\n        press B\n    }\n}",
             "description": "Nested repeat loops",
@@ -103,6 +108,16 @@ def test_compiler() -> None:
             "name": "Too many nested loops",
             "source": "repeat 1 { " * 257 + "press A" + " }" * 257,
             "expected": "Too many nested loops error",
+        },
+        {
+            "name": "Invalid interkey_time value",
+            "source": "interkey_time -1",
+            "expected": "interkey_time must be between 0 and 65535",
+        },
+        {
+            "name": "Interkey_time too large",
+            "source": "interkey_time 65536",
+            "expected": "interkey_time must be between 0 and 65535",
         },
     ]
 
