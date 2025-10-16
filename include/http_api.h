@@ -20,9 +20,8 @@ bool http_api_init(void);
  */
 bool http_api_is_ready(void);
 
-
 #ifdef __cplusplus
 }
 #endif
 
-#endif // HTTP_API_H
+#endif  // HTTP_API_H

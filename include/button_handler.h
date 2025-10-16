@@ -1,8 +1,8 @@
 #ifndef BUTTON_HANDLER_H
 #define BUTTON_HANDLER_H
 
-#include <stdint.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -26,4 +26,4 @@ bool button_handler_init(uint8_t gpio_pin, uint32_t debounce_ms, button_callback
 }
 #endif
 
-#endif // BUTTON_HANDLER_H
+#endif  // BUTTON_HANDLER_H

@@ -29,4 +29,4 @@ extern "C" {
 }
 #endif
 
-#endif // WIFI_CONFIG_H
+#endif  // WIFI_CONFIG_H

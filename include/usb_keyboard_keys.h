@@ -4,7 +4,7 @@
 /**
  * @file usb_keyboard_keys.h
  * @brief HID Key Codes for USB Keyboard
- * 
+ *
  * This file contains all the standard HID key codes that can be used
  * with the USB keyboard module. These codes follow the USB HID Usage
  * Tables for Consumer Page (0x0C) and Keyboard/Keypad Page (0x07).
@@ -16,7 +16,7 @@ extern "C" {
 
 /**
  * @brief HID Key Codes Enumeration
- * 
+ *
  * All standard HID key codes organized by category.
  * Values match the USB HID Usage Tables specification.
  */
@@ -249,24 +249,23 @@ typedef enum {
 
 /**
  * @brief Keyboard Modifier Bits
- * 
+ *
  * These are bit flags that can be combined using bitwise OR.
  * Used for modifier keys in HID reports.
  */
 typedef enum {
-    KEY_MODIFIER_LEFTCTRL   = (1UL << 0), ///< Left Control
-    KEY_MODIFIER_LEFTSHIFT  = (1UL << 1), ///< Left Shift
-    KEY_MODIFIER_LEFTALT    = (1UL << 2), ///< Left Alt
-    KEY_MODIFIER_LEFTGUI    = (1UL << 3), ///< Left Windows/Command
-    KEY_MODIFIER_RIGHTCTRL  = (1UL << 4), ///< Right Control
-    KEY_MODIFIER_RIGHTSHIFT = (1UL << 5), ///< Right Shift
-    KEY_MODIFIER_RIGHTALT   = (1UL << 6), ///< Right Alt
-    KEY_MODIFIER_RIGHTGUI   = (1UL << 7)  ///< Right Windows/Command
+    KEY_MODIFIER_LEFTCTRL = (1UL << 0),    ///< Left Control
+    KEY_MODIFIER_LEFTSHIFT = (1UL << 1),   ///< Left Shift
+    KEY_MODIFIER_LEFTALT = (1UL << 2),     ///< Left Alt
+    KEY_MODIFIER_LEFTGUI = (1UL << 3),     ///< Left Windows/Command
+    KEY_MODIFIER_RIGHTCTRL = (1UL << 4),   ///< Right Control
+    KEY_MODIFIER_RIGHTSHIFT = (1UL << 5),  ///< Right Shift
+    KEY_MODIFIER_RIGHTALT = (1UL << 6),    ///< Right Alt
+    KEY_MODIFIER_RIGHTGUI = (1UL << 7)     ///< Right Windows/Command
 } hid_key_modifiers_t;
-
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif // USB_KEYBOARD_KEYS_H
+#endif  // USB_KEYBOARD_KEYS_H

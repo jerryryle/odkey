@@ -1,8 +1,8 @@
 #ifndef USB_CORE_H
 #define USB_CORE_H
 
-#include <stdint.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -26,9 +26,8 @@ bool usb_core_init(void);
  */
 bool usb_core_is_ready(void);
 
-
 #ifdef __cplusplus
 }
 #endif
 
-#endif // USB_CORE_H
+#endif  // USB_CORE_H

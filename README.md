@@ -26,6 +26,8 @@ A PlatformIO project using ESP-IDF framework targeting the Adafruit ESP32-S2 Fea
 
 ### Building and Uploading
 
+You can build/upload within vscode with the PlatformIO extension installed. Or you can `brew install platformio` and use the following:
+
 ```bash
 # Build the project
 pio run
