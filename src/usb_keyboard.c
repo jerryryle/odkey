@@ -1,11 +1,11 @@
 #include "usb_keyboard.h"
-#include "usb_keyboard_keys.h"
 #include <stdio.h>
 #include <string.h>
+#include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "esp_log.h"
 #include "tinyusb.h"
+#include "usb_keyboard_keys.h"
 
 static const char *TAG = "usb_keyboard";
 
@@ -14,7 +14,6 @@ static bool g_initialized = false;
 static uint8_t g_interface_num = 0;
 
 #define HID_KEYBOARD_REPORT_ID 1
-
 
 bool usb_keyboard_init(uint8_t interface_num) {
     if (g_initialized) {
@@ -28,8 +27,8 @@ bool usb_keyboard_init(uint8_t interface_num) {
     return true;
 }
 
-bool usb_keyboard_send_keys(uint8_t modifier, const uint8_t* keys, uint8_t count) {
-    if (!g_initialized || !tud_hid_ready()) {
+bool usb_keyboard_send_keys(uint8_t modifier, const uint8_t *keys, uint8_t count) {
+    if (!g_initialized) {
         return false;
     }
 
@@ -42,10 +41,6 @@ bool usb_keyboard_send_keys(uint8_t modifier, const uint8_t* keys, uint8_t count
         }
     }
 
-    while (!tud_hid_ready()) {
-        vTaskDelay(pdMS_TO_TICKS(1));
-    }
-
     tud_hid_n_keyboard_report(g_interface_num, HID_KEYBOARD_REPORT_ID, modifier, keycode_array);
     return true;
 }
@@ -53,4 +48,3 @@ bool usb_keyboard_send_keys(uint8_t modifier, const uint8_t* keys, uint8_t count
 bool usb_keyboard_is_ready(void) {
     return g_initialized && tud_hid_ready();
 }
-

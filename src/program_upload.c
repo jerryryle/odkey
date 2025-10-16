@@ -166,6 +166,10 @@ void program_upload_process_command(const uint8_t *data, uint16_t len)
         return;
     }
 
+    // Debug: Print what we received
+    ESP_LOGI(TAG, "Received command: len=%d, data[0]=0x%02X, first 8 bytes: %02X %02X %02X %02X %02X %02X %02X %02X",
+             len, data[0], data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7]);
+
     uint8_t command = data[0]; // Command code is in first byte
 
     switch (command)

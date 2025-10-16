@@ -1,0 +1,8 @@
+# ODKeyScript Sample
+# This demonstrates various features of the language
+
+# Set press time to 50ms
+press_time 50
+
+# Type a greeting
+type "Hello, World!"

@@ -180,13 +180,13 @@ Examples:
     upload_parser.add_argument(
         "--vid",
         type=lambda x: int(x, 0),
-        default=0x1234,
+        default=0x303A,
         help="USB Vendor ID (default: 0x1234)",
     )
     upload_parser.add_argument(
         "--pid",
         type=lambda x: int(x, 0),
-        default=0x5678,
+        default=0x4008,
         help="USB Product ID (default: 0x5678)",
     )
     upload_parser.add_argument("--device-path", help="Specific HID device path to use")

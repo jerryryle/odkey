@@ -31,8 +31,8 @@ RESP_ERROR = 0x21
 # USB HID constants
 RAW_HID_REPORT_SIZE = 64
 DATA_PAYLOAD_SIZE = 60  # 60 bytes of data payload (bytes 4-63)
-USB_VID = 0x1234  # Placeholder - should match actual device VID
-USB_PID = 0x5678  # Placeholder - should match actual device PID
+USB_VID = 0x303A
+USB_PID = 0x4008
 
 
 class ODKeyUploadError(Exception):
@@ -116,32 +116,37 @@ class ODKeyUploader:
         if not self.device:
             raise ODKeyUploadError("Device not connected")
 
-        # Prepare command packet (64 bytes total)
-        packet = bytearray(RAW_HID_REPORT_SIZE)
-        packet[0] = command  # Command code in first byte
+        # Construct the command payload (64 bytes)
+        payload = bytearray(RAW_HID_REPORT_SIZE)
+        payload[0] = command  # Command code in first byte
         # Bytes 1-3 reserved for future use
-        packet[4 : 4 + len(data)] = data  # Data payload in bytes 4-63
+        payload[4 : 4 + len(data)] = data  # Data payload in bytes 4-63
+
+        # Wrap with HID report ID (hidapi requirement)
+        hid_packet = bytearray(1 + RAW_HID_REPORT_SIZE)
+        hid_packet[0] = 0  # Report ID (stripped by hidapi before sending to device)
+        hid_packet[1:] = payload  # Actual command payload
 
         try:
-            # Send command
-            self.device.write(packet)
+            # Send command (hidapi expects bytes, not bytearray)
+            self.device.write(bytes(hid_packet))
 
             # Wait for response (with timeout)
             timeout = 5.0  # 5 second timeout
             start_time = time.time()
 
             while time.time() - start_time < timeout:
-                if self.device.get_input_report(RAW_HID_REPORT_SIZE):
-                    response = self.device.read(RAW_HID_REPORT_SIZE)
-                    if response and len(response) > 0:
-                        response_id = response[0]
-                        if response_id == RESP_OK:
-                            return True, bytes(response[1:])
-                        elif response_id == RESP_ERROR:
-                            return False, bytes(response[1:])
-                        else:
-                            print(f"Unexpected response ID: 0x{response_id:02X}")
-                            return False, b""
+                # Try to read response (no report ID needed for our protocol)
+                response = self.device.read(RAW_HID_REPORT_SIZE)
+                if response and len(response) > 0:
+                    response_id = response[0]
+                    if response_id == RESP_OK:
+                        return True, bytes(response[1:])
+                    elif response_id == RESP_ERROR:
+                        return False, bytes(response[1:])
+                    else:
+                        print(f"Unexpected response ID: 0x{response_id:02X}")
+                        return False, b""
                 time.sleep(0.01)  # Small delay to avoid busy waiting
 
             print("Timeout waiting for response")
