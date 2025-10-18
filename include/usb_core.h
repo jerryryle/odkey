@@ -12,7 +12,7 @@ extern "C" {
  * @brief Interface numbers for USB HID interfaces
  */
 #define USB_KEYBOARD_INTERFACE_NUM 0
-#define USB_PROGRAM_UPLOAD_INTERFACE_NUM 1
+#define USB_SYSTEM_CONFIG_INTERFACE_NUM 1
 
 /**
  * @brief Initialize the USB core module

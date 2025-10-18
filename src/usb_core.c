@@ -5,11 +5,11 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "program_upload.h"
 #include "sdkconfig.h"
 #include "tinyusb.h"
 #include "tinyusb_default_config.h"
 #include "usb_keyboard.h"
+#include "usb_system_config.h"
 
 static const char *TAG = "usb_core";
 
@@ -84,7 +84,7 @@ static const uint8_t hid_configuration_descriptor[] = {
     TUD_HID_DESCRIPTOR(USB_KEYBOARD_INTERFACE_NUM, 4, HID_ITF_PROTOCOL_KEYBOARD, sizeof(keyboard_report_descriptor), 0x81, 16, 1),
 
     // Interface 1: Raw HID (no boot protocol)
-    TUD_HID_DESCRIPTOR(USB_PROGRAM_UPLOAD_INTERFACE_NUM, 5, HID_ITF_PROTOCOL_NONE, sizeof(raw_hid_report_descriptor), 0x82, 64, 1),
+    TUD_HID_DESCRIPTOR(USB_SYSTEM_CONFIG_INTERFACE_NUM, 5, HID_ITF_PROTOCOL_NONE, sizeof(raw_hid_report_descriptor), 0x82, 64, 1),
 };
 
 /********* TinyUSB HID callbacks ***************/
@@ -122,9 +122,9 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_
     if (instance == USB_KEYBOARD_INTERFACE_NUM) {
         // Interface 0: Keyboard - no incoming reports expected
         ESP_LOGW(TAG, "Unexpected report on keyboard interface");
-    } else if (instance == USB_PROGRAM_UPLOAD_INTERFACE_NUM) {
+    } else if (instance == USB_SYSTEM_CONFIG_INTERFACE_NUM) {
         // Interface 1: Raw HID - route to program upload module
-        program_upload_process_command(buffer, bufsize);
+        usb_system_config_process_command(buffer, bufsize);
     }
 }
 

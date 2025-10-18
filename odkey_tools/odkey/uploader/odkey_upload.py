@@ -22,11 +22,12 @@ except ImportError:
 from ..odkeyscript.odkeyscript_compiler import CompileError, Compiler
 
 # Protocol constants (matching the ESP32 firmware)
-CMD_WRITE_START = 0x10
-CMD_WRITE_CHUNK = 0x11
-CMD_WRITE_FINISH = 0x12
-RESP_OK = 0x20
-RESP_ERROR = 0x21
+RESP_OK = 0x10
+RESP_ERROR = 0x11
+
+CMD_PROGRAM_WRITE_START = 0x20
+CMD_PROGRAM_WRITE_CHUNK = 0x21
+CMD_PROGRAM_WRITE_FINISH = 0x22
 
 # USB HID constants
 RAW_HID_REPORT_SIZE = 64
@@ -175,7 +176,7 @@ class ODKeyUploader:
         # Step 1: Send WRITE_START command
         print("Starting write session...")
         size_data = struct.pack("<I", program_size)  # 32-bit little-endian
-        success, response = self.send_command(CMD_WRITE_START, size_data)
+        success, response = self.send_command(CMD_PROGRAM_WRITE_START, size_data)
         if not success:
             print("Failed to start write session")
             return False
@@ -196,7 +197,7 @@ class ODKeyUploader:
                 )
 
             print(f"Sending chunk {chunk_count + 1} ({chunk_size} bytes)...")
-            success, response = self.send_command(CMD_WRITE_CHUNK, chunk_data)
+            success, response = self.send_command(CMD_PROGRAM_WRITE_CHUNK, chunk_data)
             if not success:
                 print(f"Failed to send chunk {chunk_count + 1}")
                 return False
@@ -210,7 +211,7 @@ class ODKeyUploader:
 
         # Step 3: Send WRITE_FINISH command
         print("Finishing write session...")
-        success, response = self.send_command(CMD_WRITE_FINISH, size_data)
+        success, response = self.send_command(CMD_PROGRAM_WRITE_FINISH, size_data)
         if not success:
             print("Failed to finish write session")
             return False

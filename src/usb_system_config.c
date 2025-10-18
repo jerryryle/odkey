@@ -1,17 +1,18 @@
-#include "program_upload.h"
+#include "usb_system_config.h"
 #include <string.h>
 #include "esp_log.h"
 #include "program_storage.h"
 #include "tinyusb.h"
 
-static const char *TAG = "program_upload";
+static const char *TAG = "usb_system_config";
 
 // Command codes for Raw HID protocol (first byte of 64-byte packet)
-#define CMD_WRITE_START 0x10   // Start write session (erase + init)
-#define CMD_WRITE_CHUNK 0x11   // Write 60-byte data chunk (bytes 4-63)
-#define CMD_WRITE_FINISH 0x12  // Finish write (commit with program size)
-#define RESP_OK 0x20           // Success response
-#define RESP_ERROR 0x21        // Error response
+#define RESP_OK 0x10     // Success response
+#define RESP_ERROR 0x11  // Error response
+
+#define CMD_PROGRAM_WRITE_START 0x20   // Start write session (erase + init)
+#define CMD_PROGRAM_WRITE_CHUNK 0x21   // Write 60-byte data chunk (bytes 4-63)
+#define CMD_PROGRAM_WRITE_FINISH 0x22  // Finish write (commit with program size)
 
 // Upload state
 typedef enum {
@@ -29,7 +30,7 @@ static struct
     program_upload_start_callback_t on_upload_start;
 } g_upload_state = {0};
 
-bool program_upload_init(uint8_t interface_num, program_upload_start_callback_t on_upload_start) {
+bool usb_system_config_init(uint8_t interface_num, program_upload_start_callback_t on_upload_start) {
     // Reset upload state
     g_upload_state.state = UPLOAD_STATE_IDLE;
     g_upload_state.expected_program_size = 0;
@@ -63,8 +64,8 @@ static void send_response(uint8_t response_id) {
     ESP_LOGD(TAG, "Sent response: 0x%02X", response_id);
 }
 
-// Handle CMD_WRITE_START command
-static void handle_write_start(uint32_t program_size) {
+// Handle CMD_PROGRAM_WRITE_START command
+static void handle_program_write_start(uint32_t program_size) {
     if ((program_size == 0) || (program_size > PROGRAM_STORAGE_MAX_SIZE)) {
         ESP_LOGE(TAG, "Invalid program size: %lu", (unsigned long)program_size);
         send_response(RESP_ERROR);
@@ -98,16 +99,16 @@ static void handle_write_start(uint32_t program_size) {
     send_response(RESP_OK);
 }
 
-// Handle CMD_WRITE_CHUNK command
-static void handle_write_chunk(const uint8_t *chunk_data, uint16_t chunk_size) {
+// Handle CMD_PROGRAM_WRITE_CHUNK command
+static void handle_program_write_chunk(const uint8_t *chunk_data, uint16_t chunk_size) {
     if (g_upload_state.state != UPLOAD_STATE_WRITING) {
-        ESP_LOGE(TAG, "WRITE_CHUNK received but not in writing state");
+        ESP_LOGE(TAG, "PROGRAM_WRITE_CHUNK received but not in writing state");
         send_response(RESP_ERROR);
         return;
     }
 
     if (chunk_size != 60) {
-        ESP_LOGE(TAG, "WRITE_CHUNK must be exactly 60 bytes, got %d", chunk_size);
+        ESP_LOGE(TAG, "PROGRAM_WRITE_CHUNK must be exactly 60 bytes, got %d", chunk_size);
         send_response(RESP_ERROR);
         return;
     }
@@ -134,10 +135,10 @@ static void handle_write_chunk(const uint8_t *chunk_data, uint16_t chunk_size) {
     send_response(RESP_OK);
 }
 
-// Handle CMD_WRITE_FINISH command
-static void handle_write_finish(uint32_t program_size) {
+// Handle CMD_PROGRAM_WRITE_FINISH command
+static void handle_program_write_finish(uint32_t program_size) {
     if (g_upload_state.state != UPLOAD_STATE_WRITING) {
-        ESP_LOGE(TAG, "WRITE_FINISH received but not in writing state");
+        ESP_LOGE(TAG, "PROGRAM_WRITE_FINISH received but not in writing state");
         send_response(RESP_ERROR);
         return;
     }
@@ -162,7 +163,7 @@ static void handle_write_finish(uint32_t program_size) {
     send_response(RESP_OK);
 }
 
-void program_upload_process_command(const uint8_t *data, uint16_t len) {
+void usb_system_config_process_command(const uint8_t *data, uint16_t len) {
     if (data == NULL || len == 0) {
         ESP_LOGE(TAG, "Invalid command data");
         send_response(RESP_ERROR);
@@ -175,39 +176,39 @@ void program_upload_process_command(const uint8_t *data, uint16_t len) {
     uint8_t command = data[0];  // Command code is in first byte
 
     switch (command) {
-    case CMD_WRITE_START:
+    case CMD_PROGRAM_WRITE_START:
         if (len < 8)  // Need command code + 4 bytes for program size
         {
-            ESP_LOGE(TAG, "WRITE_START command too short");
+            ESP_LOGE(TAG, "PROGRAM_WRITE_START command too short");
             send_response(RESP_ERROR);
             return;
         } else {
             uint32_t program_size = extract_u32(&data[4]);  // Program size is in bytes 4-7
-            handle_write_start(program_size);
+            handle_program_write_start(program_size);
         }
         break;
 
-    case CMD_WRITE_CHUNK:
+    case CMD_PROGRAM_WRITE_CHUNK:
         if (len != 64)  // Must be exactly 64 bytes
         {
-            ESP_LOGE(TAG, "WRITE_CHUNK must be exactly 64 bytes, got %d", len);
+            ESP_LOGE(TAG, "PROGRAM_WRITE_CHUNK must be exactly 64 bytes, got %d", len);
             send_response(RESP_ERROR);
             return;
         } else {
             const uint8_t *chunk_data = &data[4];  // Data payload is in bytes 4-63
-            handle_write_chunk(chunk_data, 60);
+            handle_program_write_chunk(chunk_data, 60);
         }
         break;
 
-    case CMD_WRITE_FINISH:
+    case CMD_PROGRAM_WRITE_FINISH:
         if (len < 8)  // Need command code + 4 bytes for program size
         {
-            ESP_LOGE(TAG, "WRITE_FINISH command too short");
+            ESP_LOGE(TAG, "PROGRAM_WRITE_FINISH command too short");
             send_response(RESP_ERROR);
             return;
         } else {
             uint32_t program_size = extract_u32(&data[4]);  // Program size is in bytes 4-7
-            handle_write_finish(program_size);
+            handle_program_write_finish(program_size);
         }
         break;
 

@@ -5,9 +5,9 @@
 #include "freertos/task.h"
 #include "http_api.h"
 #include "program_storage.h"
-#include "program_upload.h"
 #include "usb_core.h"
 #include "usb_keyboard.h"
+#include "usb_system_config.h"
 #include "vm_task.h"
 
 static const char *TAG = "app";
@@ -68,9 +68,9 @@ bool app_init(void) {
         return false;
     }
 
-    // Initialize program upload module (interface 1)
-    if (!program_upload_init(USB_PROGRAM_UPLOAD_INTERFACE_NUM, on_program_upload_start)) {
-        ESP_LOGE(TAG, "Failed to initialize program upload");
+    // Initialize USB system config module (interface 1)
+    if (!usb_system_config_init(USB_SYSTEM_CONFIG_INTERFACE_NUM, on_program_upload_start)) {
+        ESP_LOGE(TAG, "Failed to initialize USB system config");
         return false;
     }
 
