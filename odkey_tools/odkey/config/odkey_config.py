@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """
-ODKey USB Upload Tool
+ODKey USB Configuration Interface
 
-Uploads ODKeyScript programs to the ODKey device over USB using Raw HID.
-This tool communicates with the ESP32-S2 firmware to upload compiled bytecode.
+Provides USB system configuration functionality for ODKey devices over Raw HID.
 """
 
 import argparse
@@ -28,6 +27,8 @@ RESP_ERROR = 0x11
 CMD_PROGRAM_WRITE_START = 0x20
 CMD_PROGRAM_WRITE_CHUNK = 0x21
 CMD_PROGRAM_WRITE_FINISH = 0x22
+CMD_PROGRAM_READ_START = 0x23
+CMD_PROGRAM_READ_CHUNK = 0x24
 
 # USB HID constants
 RAW_HID_REPORT_SIZE = 64
@@ -42,12 +43,12 @@ class ODKeyUploadError(Exception):
     pass
 
 
-class ODKeyUploader:
-    """ODKey USB uploader using Raw HID"""
+class ODKeyConfig:
+    """ODKey USB system configuration interface using Raw HID"""
 
     def __init__(self, device_path: Optional[str] = None):
         """
-        Initialize the uploader
+        Initialize the ODKey configuration interface
 
         Args:
             device_path: Optional path to specific HID device
@@ -219,6 +220,66 @@ class ODKeyUploader:
         print("Program uploaded successfully!")
         return True
 
+    def download_program(self) -> bytes:
+        """
+        Download a program from the device
+
+        Returns:
+            Program bytecode as bytes
+
+        Raises:
+            ODKeyUploadError: If download fails
+        """
+        if not self.device:
+            raise ODKeyUploadError("Device not connected")
+
+        print("Downloading program...")
+
+        # Step 1: Send READ_START command
+        print("Starting read session...")
+        success, response = self.send_command(CMD_PROGRAM_READ_START, b"")
+        if not success:
+            raise ODKeyUploadError("Failed to start read session")
+
+        # Parse program size from response (bytes 4-7)
+        if len(response) < 7:
+            raise ODKeyUploadError("Invalid response from device")
+
+        program_size = struct.unpack("<I", response[4:8])[0]  # 32-bit little-endian
+        print(f"Program size: {program_size} bytes")
+
+        if program_size == 0:
+            raise ODKeyUploadError("No program stored on device")
+
+        # Step 2: Read data in 60-byte chunks
+        program_data = bytearray()
+        bytes_received = 0
+        chunk_count = 0
+
+        while bytes_received < program_size:
+            print(f"Reading chunk {chunk_count + 1}...")
+            success, response = self.send_command(CMD_PROGRAM_READ_CHUNK, b"")
+            if not success:
+                raise ODKeyUploadError(f"Failed to read chunk {chunk_count + 1}")
+
+            # Extract chunk data (bytes 4-63)
+            chunk_data = response[4:64]
+
+            # Calculate how many bytes we actually need from this chunk
+            bytes_needed = min(60, program_size - bytes_received)
+            program_data.extend(chunk_data[:bytes_needed])
+
+            bytes_received += bytes_needed
+            chunk_count += 1
+
+            # Progress indicator
+            progress = (bytes_received / program_size) * 100
+            print(f"Progress: {progress:.1f}% ({bytes_received}/{program_size} bytes)")
+
+        print("Program downloaded successfully!")
+        # Truncate to exact program size (chunks are padded to 60 bytes)
+        return bytes(program_data[:program_size])
+
     def close(self) -> None:
         """Close the device connection"""
         if self.device:
@@ -366,16 +427,16 @@ Examples:
         return 1
 
     # Connect to device and upload
-    uploader = ODKeyUploader(args.device_path)
+    config = ODKeyConfig(args.device_path)
     # Update the device search parameters
-    uploader.usb_vid = usb_vid
-    uploader.usb_pid = usb_pid
+    config.usb_vid = usb_vid
+    config.usb_pid = usb_pid
 
     try:
-        if not uploader.find_device():
+        if not config.find_device():
             return 1
 
-        if not uploader.upload_program(program_data):
+        if not config.upload_program(program_data):
             return 1
 
         print("Upload completed successfully!")
@@ -385,7 +446,7 @@ Examples:
         print(f"Upload failed: {e}")
         return 1
     finally:
-        uploader.close()
+        config.close()
 
 
 if __name__ == "__main__":

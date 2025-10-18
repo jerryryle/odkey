@@ -11,9 +11,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from .config.odkey_config import ODKeyConfig, ODKeyUploadError
 from .odkeyscript.odkeyscript_compiler import CompileError, Compiler
 from .odkeyscript.odkeyscript_disassembler import disassemble
-from .uploader.odkey_upload import ODKeyUploader
 
 
 def compile_command(args: Any) -> int:
@@ -96,15 +96,15 @@ def upload_command(args: Any) -> int:
         return 1
 
     # Upload to device
-    uploader = ODKeyUploader(args.device_path)
-    uploader.usb_vid = args.vid
-    uploader.usb_pid = args.pid
+    config = ODKeyConfig(args.device_path)
+    config.usb_vid = args.vid
+    config.usb_pid = args.pid
 
     try:
-        if not uploader.find_device():
+        if not config.find_device():
             return 1
 
-        if not uploader.upload_program(program_data):
+        if not config.upload_program(program_data):
             return 1
 
         print("Upload completed successfully!")
@@ -114,7 +114,56 @@ def upload_command(args: Any) -> int:
         print(f"Upload failed: {e}")
         return 1
     finally:
-        uploader.close()
+        config.close()
+
+
+def download_command(args: Any) -> int:
+    """Handle the download command"""
+    # Connect to device
+    config = ODKeyConfig(args.device_path)
+    config.usb_vid = args.vid
+    config.usb_pid = args.pid
+
+    try:
+        if not config.find_device():
+            return 1
+
+        # Download program
+        try:
+            program_data = config.download_program()
+        except ODKeyUploadError as e:
+            print(f"Download failed: {e}")
+            return 1
+
+        # Save to file if specified
+        if args.output:
+            try:
+                with open(args.output, "wb") as f:
+                    f.write(program_data)
+                print(f"Program saved to {args.output}")
+            except Exception as e:
+                print(f"Error saving file: {e}")
+                return 1
+
+        # Disassemble if requested
+        if args.disassemble:
+            print("\nDisassembly:")
+            print("=" * 50)
+            try:
+                disassembly_lines = disassemble(program_data)
+                for line in disassembly_lines:
+                    print(line)
+            except Exception as e:
+                print(f"Error disassembling: {e}")
+                return 1
+
+        return 0
+
+    except Exception as e:
+        print(f"Download failed: {e}")
+        return 1
+    finally:
+        config.close()
 
 
 def list_devices_command(args: Any) -> int:
@@ -151,6 +200,8 @@ Examples:
   %(prog)s disassemble program.bin             # Disassemble bytecode to text
   %(prog)s upload program.odk                  # Compile and upload to device
   %(prog)s upload program.bin                  # Upload pre-compiled bytecode
+  %(prog)s download --output program.bin       # Download and save program
+  %(prog)s download --disassemble              # Download and display disassembly
   %(prog)s list-devices                        # List available HID devices
         """,
     )
@@ -194,6 +245,35 @@ Examples:
         "--verbose", "-v", action="store_true", help="Enable verbose output"
     )
 
+    # Download command
+    download_parser = subparsers.add_parser(
+        "download", help="Download program from ODKey device"
+    )
+    download_parser.add_argument(
+        "--output", "-o", type=Path, help="Output file to save program (.bin)"
+    )
+    download_parser.add_argument(
+        "--disassemble",
+        "-d",
+        action="store_true",
+        help="Display disassembly of downloaded program",
+    )
+    download_parser.add_argument(
+        "--vid",
+        type=lambda x: int(x, 0),
+        default=0x303A,
+        help="USB Vendor ID (default: 0x303A)",
+    )
+    download_parser.add_argument(
+        "--pid",
+        type=lambda x: int(x, 0),
+        default=0x4008,
+        help="USB Product ID (default: 0x4008)",
+    )
+    download_parser.add_argument(
+        "--device-path", help="Specific HID device path to use"
+    )
+
     # List devices command
     subparsers.add_parser("list-devices", help="List available HID devices")
 
@@ -210,6 +290,8 @@ Examples:
         return disassemble_command(args)
     elif args.command == "upload":
         return upload_command(args)
+    elif args.command == "download":
+        return download_command(args)
     elif args.command == "list-devices":
         return list_devices_command(args)
     else:
