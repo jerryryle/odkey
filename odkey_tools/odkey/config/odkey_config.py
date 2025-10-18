@@ -29,6 +29,41 @@ CMD_PROGRAM_WRITE_CHUNK = 0x21
 CMD_PROGRAM_WRITE_FINISH = 0x22
 CMD_PROGRAM_READ_START = 0x23
 CMD_PROGRAM_READ_CHUNK = 0x24
+CMD_NVS_SET_START = 0x30
+CMD_NVS_SET_DATA = 0x31
+CMD_NVS_SET_FINISH = 0x32
+CMD_NVS_GET_START = 0x33
+CMD_NVS_GET_DATA = 0x34
+CMD_NVS_DELETE = 0x35
+
+# NVS type constants (matching firmware)
+NVS_TYPE_U8 = 0x01
+NVS_TYPE_I8 = 0x02
+NVS_TYPE_U16 = 0x03
+NVS_TYPE_I16 = 0x04
+NVS_TYPE_U32 = 0x05
+NVS_TYPE_I32 = 0x06
+NVS_TYPE_U64 = 0x07
+NVS_TYPE_I64 = 0x08
+NVS_TYPE_STRING = 0x10
+NVS_TYPE_BLOB = 0x20
+
+# Type name to byte mapping
+TYPE_TO_BYTE = {
+    "u8": NVS_TYPE_U8,
+    "i8": NVS_TYPE_I8,
+    "u16": NVS_TYPE_U16,
+    "i16": NVS_TYPE_I16,
+    "u32": NVS_TYPE_U32,
+    "i32": NVS_TYPE_I32,
+    "u64": NVS_TYPE_U64,
+    "i64": NVS_TYPE_I64,
+    "string": NVS_TYPE_STRING,
+    "blob": NVS_TYPE_BLOB,
+}
+
+# Byte to type name mapping
+BYTE_TO_TYPE = {v: k for k, v in TYPE_TO_BYTE.items()}
 
 # USB HID constants
 RAW_HID_REPORT_SIZE = 64
@@ -279,6 +314,279 @@ class ODKeyConfig:
         print("Program downloaded successfully!")
         # Truncate to exact program size (chunks are padded to 60 bytes)
         return bytes(program_data[:program_size])
+
+    def nvs_set_int(self, key: str, value: int, type_str: str) -> None:
+        """
+        Set an integer value in NVS
+
+        Args:
+            key: NVS key (max 15 characters)
+            value: Integer value
+            type_str: Type string (u8, i8, u16, i16, u32, i32, u64, i64)
+
+        Raises:
+            ODKeyUploadError: If operation fails
+        """
+        if not self.device:
+            raise ODKeyUploadError("Device not connected")
+
+        if len(key) > 15:
+            raise ODKeyUploadError("Key too long (max 15 characters)")
+
+        if type_str not in TYPE_TO_BYTE:
+            raise ODKeyUploadError(f"Invalid type: {type_str}")
+
+        type_byte = TYPE_TO_BYTE[type_str]
+
+        # Encode value based on type
+        if type_str in ["u8", "i8"]:
+            value_bytes = struct.pack("<B", value & 0xFF)
+        elif type_str in ["u16", "i16"]:
+            value_bytes = struct.pack("<H", value & 0xFFFF)
+        elif type_str in ["u32", "i32"]:
+            value_bytes = struct.pack("<I", value & 0xFFFFFFFF)
+        elif type_str in ["u64", "i64"]:
+            value_bytes = struct.pack("<Q", value & 0xFFFFFFFFFFFFFFFF)
+        else:
+            raise ODKeyUploadError(f"Invalid integer type: {type_str}")
+
+        # Send SET_START command
+        start_data = bytearray(25)  # type(1) + length(4) + key(16) + padding(4)
+        start_data[0] = type_byte
+        start_data[1:5] = struct.pack("<I", len(value_bytes))
+        start_data[5 : 5 + len(key)] = key.encode("utf-8")
+
+        success, response = self.send_command(CMD_NVS_SET_START, bytes(start_data))
+        if not success:
+            raise ODKeyUploadError("Failed to start NVS set operation")
+
+        # Send value data (integers are small, so single chunk)
+        if len(value_bytes) > 0:
+            success, response = self.send_command(CMD_NVS_SET_DATA, value_bytes)
+            if not success:
+                raise ODKeyUploadError("Failed to send NVS value data")
+
+        # Send SET_FINISH command
+        success, response = self.send_command(CMD_NVS_SET_FINISH, b"")
+        if not success:
+            raise ODKeyUploadError("Failed to finish NVS set operation")
+
+        print(f"NVS set completed: {key} = {value} ({type_str})")
+
+    def nvs_set_str(self, key: str, value: str) -> None:
+        """
+        Set a string value in NVS
+
+        Args:
+            key: NVS key (max 15 characters)
+            value: String value
+
+        Raises:
+            ODKeyUploadError: If operation fails
+        """
+        if not self.device:
+            raise ODKeyUploadError("Device not connected")
+
+        if len(key) > 15:
+            raise ODKeyUploadError("Key too long (max 15 characters)")
+
+        # Encode as UTF-8 + null terminator
+        value_bytes = value.encode("utf-8") + b"\x00"
+
+        if len(value_bytes) > 1024:
+            raise ODKeyUploadError("Value too large (max 1024 bytes)")
+
+        # Send SET_START command
+        start_data = bytearray(25)  # type(1) + length(4) + key(16) + padding(4)
+        start_data[0] = NVS_TYPE_STRING
+        start_data[1:5] = struct.pack("<I", len(value_bytes))
+        start_data[5 : 5 + len(key)] = key.encode("utf-8")
+
+        success, response = self.send_command(CMD_NVS_SET_START, bytes(start_data))
+        if not success:
+            raise ODKeyUploadError("Failed to start NVS set operation")
+
+        # Send value data in chunks
+        bytes_sent = 0
+        while bytes_sent < len(value_bytes):
+            chunk_size = min(60, len(value_bytes) - bytes_sent)
+            chunk_data = value_bytes[bytes_sent : bytes_sent + chunk_size]
+
+            success, response = self.send_command(CMD_NVS_SET_DATA, chunk_data)
+            if not success:
+                raise ODKeyUploadError("Failed to send NVS value data")
+
+            bytes_sent += chunk_size
+
+        # Send SET_FINISH command
+        success, response = self.send_command(CMD_NVS_SET_FINISH, b"")
+        if not success:
+            raise ODKeyUploadError("Failed to finish NVS set operation")
+
+        print(f"NVS set completed: {key} = '{value}' (string)")
+
+    def nvs_set_blob(self, key: str, value: bytes) -> None:
+        """
+        Set a blob value in NVS
+
+        Args:
+            key: NVS key (max 15 characters)
+            value: Binary data
+
+        Raises:
+            ODKeyUploadError: If operation fails
+        """
+        if not self.device:
+            raise ODKeyUploadError("Device not connected")
+
+        if len(key) > 15:
+            raise ODKeyUploadError("Key too long (max 15 characters)")
+
+        if len(value) > 1024:
+            raise ODKeyUploadError("Value too large (max 1024 bytes)")
+
+        # Send SET_START command
+        start_data = bytearray(25)  # type(1) + length(4) + key(16) + padding(4)
+        start_data[0] = NVS_TYPE_BLOB
+        start_data[1:5] = struct.pack("<I", len(value))
+        start_data[5 : 5 + len(key)] = key.encode("utf-8")
+
+        success, response = self.send_command(CMD_NVS_SET_START, bytes(start_data))
+        if not success:
+            raise ODKeyUploadError("Failed to start NVS set operation")
+
+        # Send value data in chunks
+        bytes_sent = 0
+        while bytes_sent < len(value):
+            chunk_size = min(60, len(value) - bytes_sent)
+            chunk_data = value[bytes_sent : bytes_sent + chunk_size]
+
+            success, response = self.send_command(CMD_NVS_SET_DATA, chunk_data)
+            if not success:
+                raise ODKeyUploadError("Failed to send NVS value data")
+
+            bytes_sent += chunk_size
+
+        # Send SET_FINISH command
+        success, response = self.send_command(CMD_NVS_SET_FINISH, b"")
+        if not success:
+            raise ODKeyUploadError("Failed to finish NVS set operation")
+
+        print(f"NVS set completed: {key} = {len(value)} bytes (blob)")
+
+    def nvs_get(self, key: str) -> tuple[str, Any]:
+        """
+        Get a value from NVS
+
+        Args:
+            key: NVS key (max 15 characters)
+
+        Returns:
+            Tuple of (type_name, value)
+
+        Raises:
+            ODKeyUploadError: If operation fails
+        """
+        if not self.device:
+            raise ODKeyUploadError("Device not connected")
+
+        if len(key) > 15:
+            raise ODKeyUploadError("Key too long (max 15 characters)")
+
+        # Send GET_START command
+        start_data = bytearray(20)  # key(16) + padding(4)
+        start_data[0 : len(key)] = key.encode("utf-8")
+
+        success, response = self.send_command(CMD_NVS_GET_START, bytes(start_data))
+        if not success:
+            raise ODKeyUploadError("Failed to start NVS get operation")
+
+        # Parse type and size from first response
+        if len(response) < 9:
+            raise ODKeyUploadError("Invalid response from device")
+
+        value_type = response[4]
+        value_size = struct.unpack("<I", response[5:9])[0]
+
+        if value_type not in BYTE_TO_TYPE:
+            raise ODKeyUploadError(f"Unknown value type: 0x{value_type:02X}")
+
+        type_name = BYTE_TO_TYPE[value_type]
+
+        # Read value data
+        value_data = bytearray()
+        bytes_received = 0
+
+        # First chunk (55 bytes after type/size)
+        if value_size > 0:
+            first_chunk_size = min(55, value_size)
+            if len(response) >= 9 + first_chunk_size:
+                value_data.extend(response[9 : 9 + first_chunk_size])
+                bytes_received = first_chunk_size
+
+        # Subsequent chunks
+        while bytes_received < value_size:
+            success, response = self.send_command(CMD_NVS_GET_DATA, b"")
+            if not success:
+                raise ODKeyUploadError("Failed to get NVS value data")
+
+            chunk_size = min(60, value_size - bytes_received)
+            if len(response) >= 4 + chunk_size:
+                value_data.extend(response[4 : 4 + chunk_size])
+                bytes_received += chunk_size
+
+        # Decode value based on type
+        if type_name in ["u8", "i8"]:
+            decoded_value = struct.unpack("<B", value_data)[0]
+            if type_name == "i8":
+                decoded_value = struct.unpack("<b", value_data)[0]
+        elif type_name in ["u16", "i16"]:
+            decoded_value = struct.unpack("<H", value_data)[0]
+            if type_name == "i16":
+                decoded_value = struct.unpack("<h", value_data)[0]
+        elif type_name in ["u32", "i32"]:
+            decoded_value = struct.unpack("<I", value_data)[0]
+            if type_name == "i32":
+                decoded_value = struct.unpack("<i", value_data)[0]
+        elif type_name in ["u64", "i64"]:
+            decoded_value = struct.unpack("<Q", value_data)[0]
+            if type_name == "i64":
+                decoded_value = struct.unpack("<q", value_data)[0]
+        elif type_name == "string":
+            decoded_value = value_data.decode("utf-8").rstrip("\x00")
+        elif type_name == "blob":
+            decoded_value = bytes(value_data)
+        else:
+            raise ODKeyUploadError(f"Unknown type: {type_name}")
+
+        print(f"NVS get completed: {key} = {decoded_value} ({type_name})")
+        return type_name, decoded_value
+
+    def nvs_delete(self, key: str) -> None:
+        """
+        Delete a key from NVS
+
+        Args:
+            key: NVS key (max 15 characters)
+
+        Raises:
+            ODKeyUploadError: If operation fails
+        """
+        if not self.device:
+            raise ODKeyUploadError("Device not connected")
+
+        if len(key) > 15:
+            raise ODKeyUploadError("Key too long (max 15 characters)")
+
+        # Send DELETE command
+        delete_data = bytearray(20)  # key(16) + padding(4)
+        delete_data[0 : len(key)] = key.encode("utf-8")
+
+        success, response = self.send_command(CMD_NVS_DELETE, bytes(delete_data))
+        if not success:
+            raise ODKeyUploadError("Failed to delete NVS key")
+
+        print(f"NVS delete completed: {key}")
 
     def close(self) -> None:
         """Close the device connection"""

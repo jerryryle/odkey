@@ -166,6 +166,138 @@ def download_command(args: Any) -> int:
         config.close()
 
 
+def nvs_set_command(args: Any) -> int:
+    """Handle the nvs-set command"""
+    # Connect to device
+    config = ODKeyConfig(args.device_path)
+    config.usb_vid = args.vid
+    config.usb_pid = args.pid
+
+    try:
+        if not config.find_device():
+            return 1
+
+        # Parse value based on type
+        if args.type == "string":
+            # Default type, use value as string
+            config.nvs_set_str(args.key, args.value)
+        elif args.type in ["u8", "i8", "u16", "i16", "u32", "i32", "u64", "i64"]:
+            # Integer type
+            try:
+                int_value = int(args.value)
+                config.nvs_set_int(args.key, int_value, args.type)
+            except ValueError:
+                print(f"Error: '{args.value}' is not a valid integer")
+                return 1
+        elif args.type == "blob":
+            # Blob type
+            if args.file:
+                # Read from file
+                try:
+                    with open(args.file, "rb") as f:
+                        blob_data = f.read()
+                    config.nvs_set_blob(args.key, blob_data)
+                except Exception as e:
+                    print(f"Error reading file: {e}")
+                    return 1
+            else:
+                # Interpret value as hex
+                try:
+                    blob_data = bytes.fromhex(args.value)
+                    config.nvs_set_blob(args.key, blob_data)
+                except ValueError:
+                    print(f"Error: '{args.value}' is not valid hex data")
+                    return 1
+        else:
+            print(f"Error: Invalid type '{args.type}'")
+            return 1
+
+        return 0
+
+    except Exception as e:
+        print(f"NVS set failed: {e}")
+        return 1
+    finally:
+        config.close()
+
+
+def nvs_get_command(args: Any) -> int:
+    """Handle the nvs-get command"""
+    # Connect to device
+    config = ODKeyConfig(args.device_path)
+    config.usb_vid = args.vid
+    config.usb_pid = args.pid
+
+    try:
+        if not config.find_device():
+            return 1
+
+        # Get value
+        try:
+            type_name, value = config.nvs_get(args.key)
+        except ODKeyUploadError as e:
+            print(f"NVS get failed: {e}")
+            return 1
+
+        # Display or save value
+        if args.output:
+            # Save to file
+            try:
+                if type_name == "blob":
+                    with open(args.output, "wb") as f:
+                        f.write(value)
+                else:
+                    with open(args.output, "w", encoding="utf-8") as f:
+                        f.write(str(value))
+                print(f"Value saved to {args.output}")
+            except Exception as e:
+                print(f"Error saving file: {e}")
+                return 1
+        else:
+            # Display value
+            print(f"Type: {type_name}")
+            if type_name == "blob" and isinstance(value, bytes):
+                print(f"Value: {len(value)} bytes")
+                print(f"Hex: {bytes(value).hex()}")
+            else:
+                print(f"Value: {value}")
+
+        return 0
+
+    except Exception as e:
+        print(f"NVS get failed: {e}")
+        return 1
+    finally:
+        config.close()
+
+
+def nvs_delete_command(args: Any) -> int:
+    """Handle the nvs-delete command"""
+    # Connect to device
+    config = ODKeyConfig(args.device_path)
+    config.usb_vid = args.vid
+    config.usb_pid = args.pid
+
+    try:
+        if not config.find_device():
+            return 1
+
+        # Delete key
+        try:
+            config.nvs_delete(args.key)
+        except ODKeyUploadError as e:
+            print(f"NVS delete failed: {e}")
+            return 1
+
+        return 0
+
+    except Exception as e:
+        print(f"NVS delete failed: {e}")
+        return 1
+    finally:
+        config.close()
+
+
 def list_devices_command(args: Any) -> int:
     """Handle the list-devices command"""
     try:
@@ -202,6 +334,12 @@ Examples:
   %(prog)s upload program.bin                  # Upload pre-compiled bytecode
   %(prog)s download --output program.bin       # Download and save program
   %(prog)s download --disassemble              # Download and display disassembly
+  %(prog)s nvs-set ssid "MyNetwork"            # Set a string value
+  %(prog)s nvs-set boot_count 42 --type u32    # Set an integer value
+  %(prog)s nvs-set cert --file cert.pem --type blob  # Set blob from file
+  %(prog)s nvs-get ssid                        # Get a value
+  %(prog)s nvs-get cert --output cert.pem      # Get and save to file
+  %(prog)s nvs-delete old_key                  # Delete a key
   %(prog)s list-devices                        # List available HID devices
         """,
     )
@@ -274,6 +412,85 @@ Examples:
         "--device-path", help="Specific HID device path to use"
     )
 
+    # NVS set command
+    nvs_set_parser = subparsers.add_parser("nvs-set", help="Set a value in NVS storage")
+    nvs_set_parser.add_argument("key", help="NVS key (max 15 characters)")
+    nvs_set_parser.add_argument("value", help="Value to set")
+    nvs_set_parser.add_argument(
+        "--type",
+        choices=[
+            "u8",
+            "i8",
+            "u16",
+            "i16",
+            "u32",
+            "i32",
+            "u64",
+            "i64",
+            "string",
+            "blob",
+        ],
+        default="string",
+        help="Data type (default: string)",
+    )
+    nvs_set_parser.add_argument(
+        "--file", type=Path, help="Read blob data from file (for blob type)"
+    )
+    nvs_set_parser.add_argument(
+        "--vid",
+        type=lambda x: int(x, 0),
+        default=0x303A,
+        help="USB Vendor ID (default: 0x303A)",
+    )
+    nvs_set_parser.add_argument(
+        "--pid",
+        type=lambda x: int(x, 0),
+        default=0x4008,
+        help="USB Product ID (default: 0x4008)",
+    )
+    nvs_set_parser.add_argument("--device-path", help="Specific HID device path to use")
+
+    # NVS get command
+    nvs_get_parser = subparsers.add_parser(
+        "nvs-get", help="Get a value from NVS storage"
+    )
+    nvs_get_parser.add_argument("key", help="NVS key (max 15 characters)")
+    nvs_get_parser.add_argument("--output", "-o", type=Path, help="Save value to file")
+    nvs_get_parser.add_argument(
+        "--vid",
+        type=lambda x: int(x, 0),
+        default=0x303A,
+        help="USB Vendor ID (default: 0x303A)",
+    )
+    nvs_get_parser.add_argument(
+        "--pid",
+        type=lambda x: int(x, 0),
+        default=0x4008,
+        help="USB Product ID (default: 0x4008)",
+    )
+    nvs_get_parser.add_argument("--device-path", help="Specific HID device path to use")
+
+    # NVS delete command
+    nvs_delete_parser = subparsers.add_parser(
+        "nvs-delete", help="Delete a key from NVS storage"
+    )
+    nvs_delete_parser.add_argument("key", help="NVS key (max 15 characters)")
+    nvs_delete_parser.add_argument(
+        "--vid",
+        type=lambda x: int(x, 0),
+        default=0x303A,
+        help="USB Vendor ID (default: 0x303A)",
+    )
+    nvs_delete_parser.add_argument(
+        "--pid",
+        type=lambda x: int(x, 0),
+        default=0x4008,
+        help="USB Product ID (default: 0x4008)",
+    )
+    nvs_delete_parser.add_argument(
+        "--device-path", help="Specific HID device path to use"
+    )
+
     # List devices command
     subparsers.add_parser("list-devices", help="List available HID devices")
 
@@ -292,6 +509,12 @@ Examples:
         return upload_command(args)
     elif args.command == "download":
         return download_command(args)
+    elif args.command == "nvs-set":
+        return nvs_set_command(args)
+    elif args.command == "nvs-get":
+        return nvs_get_command(args)
+    elif args.command == "nvs-delete":
+        return nvs_delete_command(args)
     elif args.command == "list-devices":
         return list_devices_command(args)
     else:
