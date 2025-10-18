@@ -9,7 +9,8 @@
 extern "C" {
 #endif
 
-#define PROGRAM_STORAGE_MAX_SIZE (1024 * 1024)  // 1MB total
+#define PROGRAM_STORAGE_PAGE_SIZE 4096                                        // Flash page size in bytes
+#define PROGRAM_STORAGE_MAX_SIZE ((1024 * 1024) - PROGRAM_STORAGE_PAGE_SIZE)  // 1MB total minus reserved first page
 
 /**
  * @brief Initialize program storage
@@ -27,17 +28,18 @@ const uint8_t *program_storage_get(size_t *out_size);
 /**
  * @brief Start writing a new program to flash (erases only necessary sectors)
  * @param expected_program_size The expected size of the program to be written
+ * @note First 4KB page is reserved for size header, program data starts at page 1
  * @return true on success, false on failure
  */
 bool program_storage_write_start(size_t expected_program_size);
 
 /**
- * @brief Write a chunk of program data to flash
- * @param chunk Pointer to chunk data
- * @param chunk_size Size of chunk in bytes (must be multiple of 4 for ESP32 flash alignment)
+ * @brief Write a full page of program data to flash
+ * @param page_data Pointer to page data
+ * @param page_size Size of page in bytes (must be exactly PROGRAM_STORAGE_PAGE_SIZE bytes)
  * @return true on success, false on failure
  */
-bool program_storage_write_chunk(const uint8_t *chunk, size_t chunk_size);
+bool program_storage_write_page(const uint8_t *page_data, size_t page_size);
 
 /**
  * @brief Finish writing program to flash (commits the size header, which marks the program as "valid")

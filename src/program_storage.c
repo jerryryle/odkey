@@ -65,7 +65,7 @@ const uint8_t *program_storage_get(size_t *out_size) {
     memcpy(&program_size, data, sizeof(program_size));
 
     // Check if partition is empty (all zeros) or has invalid size
-    if (program_size == 0 || program_size > PROGRAM_STORAGE_MAX_SIZE - sizeof(program_size)) {
+    if ((program_size == 0) || (program_size > PROGRAM_STORAGE_MAX_SIZE)) {
         ESP_LOGD(TAG, "No valid program in storage (size: %lu)", (unsigned long)program_size);
         esp_partition_munmap(mmap_handle);
         *out_size = 0;
@@ -75,8 +75,8 @@ const uint8_t *program_storage_get(size_t *out_size) {
     ESP_LOGI(TAG, "Found program in storage: %lu bytes", (unsigned long)program_size);
     *out_size = program_size;
 
-    // Return pointer to program data (skip the 4-byte size header)
-    return data + sizeof(program_size);
+    // Return pointer to program data (skip the size header page)
+    return data + PROGRAM_STORAGE_PAGE_SIZE;
 }
 
 bool program_storage_write_start(size_t expected_program_size) {
@@ -91,18 +91,15 @@ bool program_storage_write_start(size_t expected_program_size) {
         return false;
     }
 
-    if (expected_program_size > PROGRAM_STORAGE_MAX_SIZE - sizeof(uint32_t)) {
-        ESP_LOGE(TAG, "Expected program size too large: %lu bytes (max: %lu)", (unsigned long)expected_program_size, (unsigned long)(PROGRAM_STORAGE_MAX_SIZE - sizeof(uint32_t)));
+    if (expected_program_size > PROGRAM_STORAGE_MAX_SIZE) {
+        ESP_LOGE(TAG, "Expected program size too large: %lu bytes (max: %lu)", (unsigned long)expected_program_size, (unsigned long)(PROGRAM_STORAGE_MAX_SIZE));
         return false;
     }
 
-    // Calculate total size needed (program + size header)
-    size_t total_size_needed = expected_program_size + sizeof(uint32_t);
-
     // Calculate sectors needed (round up to 4KB boundaries)
     // ESP32 flash sectors are 4KB (0x1000 bytes)
-    size_t sectors_needed = (total_size_needed + 4095) / 4096;
-    size_t erase_size = sectors_needed * 4096;
+    size_t sectors_needed = (expected_program_size + (PROGRAM_STORAGE_PAGE_SIZE - 1)) / PROGRAM_STORAGE_PAGE_SIZE;
+    size_t erase_size = sectors_needed * PROGRAM_STORAGE_PAGE_SIZE;
 
     // Ensure we don't exceed partition size
     if (erase_size > g_program_partition->size) {
@@ -119,35 +116,35 @@ bool program_storage_write_start(size_t expected_program_size) {
     }
 
     // Initialize write state
-    g_write_state.bytes_written = sizeof(uint32_t);  // Skip over the program size header
+    g_write_state.bytes_written = PROGRAM_STORAGE_PAGE_SIZE;  // Skip over the entire first page (reserved for size header)
 
     return true;
 }
 
-bool program_storage_write_chunk(const uint8_t *chunk, size_t chunk_size) {
+bool program_storage_write_page(const uint8_t *page_data, size_t page_size) {
     if (g_program_partition == NULL) {
         ESP_LOGE(TAG, "Program storage not initialized");
         return false;
     }
 
-    if (chunk == NULL || chunk_size == 0 || chunk_size % 4 != 0) {
-        ESP_LOGE(TAG, "Chunk data cannot be NULL, zero, or not multiple of 4 bytes");
+    if (page_data == NULL || page_size != PROGRAM_STORAGE_PAGE_SIZE) {
+        ESP_LOGE(TAG, "Page data cannot be NULL and page_size must be exactly %d bytes", PROGRAM_STORAGE_PAGE_SIZE);
         return false;
     }
 
-    if (g_write_state.bytes_written + chunk_size > PROGRAM_STORAGE_MAX_SIZE) {
-        ESP_LOGE(TAG, "Chunk would exceed partition size");
+    if (g_write_state.bytes_written + page_size > g_program_partition->size) {
+        ESP_LOGE(TAG, "Page would exceed partition size");
         return false;
     }
 
-    esp_err_t ret = esp_partition_write(g_program_partition, g_write_state.bytes_written, chunk, chunk_size);
+    esp_err_t ret = esp_partition_write(g_program_partition, g_write_state.bytes_written, page_data, page_size);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to write chunk: %s", esp_err_to_name(ret));
+        ESP_LOGE(TAG, "Failed to write page: %s", esp_err_to_name(ret));
         return false;
     }
 
-    g_write_state.bytes_written += chunk_size;
-    ESP_LOGD(TAG, "Wrote chunk: %lu bytes (total: %lu)", (unsigned long)chunk_size, (unsigned long)g_write_state.bytes_written);
+    g_write_state.bytes_written += page_size;
+    ESP_LOGD(TAG, "Wrote page: %lu bytes (total: %lu)", (unsigned long)page_size, (unsigned long)g_write_state.bytes_written);
 
     return true;
 }
@@ -163,21 +160,20 @@ bool program_storage_write_finish(size_t program_size) {
         return false;
     }
 
-    if (program_size > PROGRAM_STORAGE_MAX_SIZE - sizeof(uint32_t)) {
-        ESP_LOGE(TAG, "Program too large: %lu bytes (max: %lu)", (unsigned long)program_size, (unsigned long)(PROGRAM_STORAGE_MAX_SIZE - sizeof(uint32_t)));
+    if (program_size > PROGRAM_STORAGE_MAX_SIZE) {
+        ESP_LOGE(TAG, "Program too large: %lu bytes (max: %lu)", (unsigned long)program_size, (unsigned long)(PROGRAM_STORAGE_MAX_SIZE));
         return false;
     }
 
     // Check if we wrote at least the expected amount of program data
-    size_t actual_program_bytes = g_write_state.bytes_written - sizeof(uint32_t);
+    size_t actual_program_bytes = g_write_state.bytes_written - PROGRAM_STORAGE_PAGE_SIZE;  // Skip reserved first page
     if (actual_program_bytes < program_size) {
         ESP_LOGE(TAG, "Write incomplete: wrote %lu bytes, expected at least %lu", (unsigned long)actual_program_bytes, (unsigned long)program_size);
         return false;
     }
 
     // Write the size header at offset 0 (this makes the program "valid")
-    uint32_t program_size_header = (uint32_t)program_size;
-    esp_err_t ret = esp_partition_write(g_program_partition, 0, &program_size_header, sizeof(program_size_header));
+    esp_err_t ret = esp_partition_write(g_program_partition, 0, &program_size, sizeof(program_size));
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to write size header: %s", esp_err_to_name(ret));
         return false;

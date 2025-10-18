@@ -8,6 +8,9 @@
 
 static const char *TAG = "usb_system_config";
 
+// Transfer buffer size (must match flash page size for optimal performance)
+#define TRANSFER_BUFFER_SIZE PROGRAM_STORAGE_PAGE_SIZE
+
 // Command codes for Raw HID protocol (first byte of 64-byte packet)
 #define RESP_OK 0x10     // Success response
 #define RESP_ERROR 0x11  // Error response
@@ -38,8 +41,7 @@ static struct
 {
     transfer_state_t state;
     size_t expected_program_size;
-    size_t bytes_written;
-    size_t bytes_read;
+    size_t program_bytes_transferred;
     size_t total_program_size;
     const uint8_t *program_data;
     uint8_t interface_num;
@@ -47,26 +49,25 @@ static struct
 
     // NVS transfer state
     uint8_t nvs_value_type;
-    char nvs_key[16];  // 15 chars + null terminator
+    char nvs_key[NVS_KEY_NAME_MAX_SIZE];
     size_t nvs_value_length;
 
-    // Generic transfer buffer (4KB for flash page alignment)
-    uint8_t transfer_buffer[4096];
-    size_t transfer_buffer_used;
+    // Generic transfer buffer (page-sized for flash alignment)
+    uint8_t transfer_buffer[TRANSFER_BUFFER_SIZE];
+    size_t transfer_buffer_transferred;
 } g_transfer_state = {0};
 
 // Helper function to reset transfer buffer
 static void reset_transfer_buffer(void) {
     memset(g_transfer_state.transfer_buffer, 0, sizeof(g_transfer_state.transfer_buffer));
-    g_transfer_state.transfer_buffer_used = 0;
+    g_transfer_state.transfer_buffer_transferred = 0;
 }
 
 bool usb_system_config_init(uint8_t interface_num, program_upload_start_callback_t on_upload_start) {
     // Reset transfer state
     g_transfer_state.state = TRANSFER_STATE_IDLE;
     g_transfer_state.expected_program_size = 0;
-    g_transfer_state.bytes_written = 0;
-    g_transfer_state.bytes_read = 0;
+    g_transfer_state.program_bytes_transferred = 0;
     g_transfer_state.total_program_size = 0;
     g_transfer_state.program_data = NULL;
     g_transfer_state.interface_num = interface_num;
@@ -145,20 +146,20 @@ static void handle_program_write_start(uint32_t program_size) {
         }
     }
 
-    // Calculate storage size needed (round up to 60-byte chunk boundary)
-    size_t expected_program_storage_size = ((program_size + 59) / 60) * 60;
-
-    if (!program_storage_write_start(expected_program_storage_size)) {
+    if (!program_storage_write_start(program_size)) {
         ESP_LOGE(TAG, "Failed to start program storage write");
         send_response(RESP_ERROR);
         return;
     }
 
     g_transfer_state.state = TRANSFER_STATE_WRITING;
-    g_transfer_state.expected_program_size = expected_program_storage_size;  // Track storage size for chunk validation
-    g_transfer_state.bytes_written = 0;
+    g_transfer_state.expected_program_size = program_size;  // Track actual program size
+    g_transfer_state.program_bytes_transferred = 0;
 
-    ESP_LOGI(TAG, "Write session started, program: %lu bytes, storage: %lu bytes", (unsigned long)program_size, (unsigned long)expected_program_storage_size);
+    // Reset transfer buffer for new operation
+    reset_transfer_buffer();
+
+    ESP_LOGI(TAG, "Write session started, program: %lu bytes", (unsigned long)program_size);
     send_response(RESP_OK);
 }
 
@@ -172,28 +173,57 @@ static void handle_program_write_chunk(const uint8_t *chunk_data, uint16_t chunk
 
     if (chunk_size != 60) {
         ESP_LOGE(TAG, "PROGRAM_WRITE_CHUNK must be exactly 60 bytes, got %d", chunk_size);
-        send_response(RESP_ERROR);
-        return;
-    }
-
-    // Check if writing this chunk would exceed the expected program size
-    if (g_transfer_state.bytes_written + chunk_size > g_transfer_state.expected_program_size) {
-        ESP_LOGE(TAG, "Chunk would exceed expected program size: %lu + %d > %lu", (unsigned long)g_transfer_state.bytes_written, chunk_size, (unsigned long)g_transfer_state.expected_program_size);
         g_transfer_state.state = TRANSFER_STATE_ERROR;
         send_response(RESP_ERROR);
         return;
     }
 
-    // Write the 60-byte chunk to flash
-    if (!program_storage_write_chunk(chunk_data, chunk_size)) {
-        ESP_LOGE(TAG, "Failed to write chunk to flash");
+    // Check if we've already received the expected number of bytes
+    if (g_transfer_state.program_bytes_transferred >= g_transfer_state.expected_program_size) {
+        ESP_LOGE(TAG, "Already received expected program size: %lu bytes", (unsigned long)g_transfer_state.expected_program_size);
         g_transfer_state.state = TRANSFER_STATE_ERROR;
         send_response(RESP_ERROR);
         return;
     }
 
-    g_transfer_state.bytes_written += chunk_size;
-    ESP_LOGD(TAG, "Wrote chunk: %lu/%lu bytes (storage)", (unsigned long)g_transfer_state.bytes_written, (unsigned long)g_transfer_state.expected_program_size);
+    // Calculate how many bytes of actual program data are in this chunk
+    size_t program_bytes_remaining = g_transfer_state.expected_program_size - g_transfer_state.program_bytes_transferred;
+    size_t actual_chunk_size = (program_bytes_remaining < chunk_size) ? program_bytes_remaining : chunk_size;
+
+    // Handle chunk that may span buffer boundaries
+    size_t bytes_remaining = actual_chunk_size;
+    const uint8_t *chunk_ptr = chunk_data;
+
+    while (bytes_remaining > 0) {
+        // Calculate how many bytes we can fit in the current buffer
+        size_t bytes_available = sizeof(g_transfer_state.transfer_buffer) - g_transfer_state.transfer_buffer_transferred;
+        size_t bytes_to_copy = (bytes_remaining < bytes_available) ? bytes_remaining : bytes_available;
+
+        // Copy bytes to buffer
+        memcpy(&g_transfer_state.transfer_buffer[g_transfer_state.transfer_buffer_transferred], chunk_ptr, bytes_to_copy);
+        g_transfer_state.transfer_buffer_transferred += bytes_to_copy;
+        g_transfer_state.program_bytes_transferred += bytes_to_copy;
+
+        // Update remaining bytes and pointer
+        bytes_remaining -= bytes_to_copy;
+        chunk_ptr += bytes_to_copy;
+
+        // If buffer is full, write it out
+        if (g_transfer_state.transfer_buffer_transferred >= TRANSFER_BUFFER_SIZE) {
+            // Write full page to flash
+            if (!program_storage_write_page(g_transfer_state.transfer_buffer, TRANSFER_BUFFER_SIZE)) {
+                ESP_LOGE(TAG, "Failed to write page to flash");
+                g_transfer_state.state = TRANSFER_STATE_ERROR;
+                send_response(RESP_ERROR);
+                return;
+            }
+
+            // Reset buffer for next page
+            reset_transfer_buffer();
+        }
+    }
+
+    ESP_LOGD(TAG, "Buffered chunk: %lu/%lu bytes (program)", (unsigned long)g_transfer_state.program_bytes_transferred, (unsigned long)g_transfer_state.expected_program_size);
 
     send_response(RESP_OK);
 }
@@ -211,8 +241,28 @@ static void handle_program_write_finish(uint32_t program_size) {
         return;
     }
 
+    // Validate that we received the expected number of bytes
+    if (g_transfer_state.program_bytes_transferred != program_size) {
+        ESP_LOGE(TAG, "Program size mismatch: received %lu bytes, expected %lu", (unsigned long)g_transfer_state.program_bytes_transferred, (unsigned long)program_size);
+        g_transfer_state.state = TRANSFER_STATE_ERROR;
+        send_response(RESP_ERROR);
+        return;
+    }
+
+    // If there's remaining data in the buffer, write it as a final page
+    if (g_transfer_state.transfer_buffer_transferred > 0) {
+        // Write final page (remaining bytes are already zero from reset_transfer_buffer)
+        if (!program_storage_write_page(g_transfer_state.transfer_buffer, TRANSFER_BUFFER_SIZE)) {
+            ESP_LOGE(TAG, "Failed to write final page to flash");
+            g_transfer_state.state = TRANSFER_STATE_ERROR;
+            send_response(RESP_ERROR);
+            return;
+        }
+    }
+
     if (!program_storage_write_finish(program_size)) {
         ESP_LOGE(TAG, "Failed to finish program storage write");
+        g_transfer_state.state = TRANSFER_STATE_ERROR;
         send_response(RESP_ERROR);
         return;
     }
@@ -221,7 +271,7 @@ static void handle_program_write_finish(uint32_t program_size) {
 
     g_transfer_state.state = TRANSFER_STATE_IDLE;
     g_transfer_state.expected_program_size = 0;
-    g_transfer_state.bytes_written = 0;
+    g_transfer_state.program_bytes_transferred = 0;
 
     send_response(RESP_OK);
 }
@@ -241,7 +291,7 @@ static void handle_program_read_start(void) {
     // Initialize read state
     g_transfer_state.state = TRANSFER_STATE_READING;
     g_transfer_state.total_program_size = program_size;
-    g_transfer_state.bytes_read = 0;
+    g_transfer_state.program_bytes_transferred = 0;
     g_transfer_state.program_data = program_data;
 
     ESP_LOGI(TAG, "Read session started, program: %lu bytes", (unsigned long)program_size);
@@ -264,37 +314,38 @@ static void handle_program_read_chunk(void) {
         return;
     }
 
-    if (g_transfer_state.bytes_read >= g_transfer_state.total_program_size) {
+    if (g_transfer_state.program_bytes_transferred >= g_transfer_state.total_program_size) {
         ESP_LOGE(TAG, "All program data already read");
+        g_transfer_state.state = TRANSFER_STATE_ERROR;
         send_response(RESP_ERROR);
         return;
     }
 
     // Calculate how many bytes to send (max 60)
-    size_t bytes_remaining = g_transfer_state.total_program_size - g_transfer_state.bytes_read;
+    size_t bytes_remaining = g_transfer_state.total_program_size - g_transfer_state.program_bytes_transferred;
     size_t chunk_size = (bytes_remaining > 60) ? 60 : bytes_remaining;
 
     // Get chunk data
-    const uint8_t *chunk_data = g_transfer_state.program_data + g_transfer_state.bytes_read;
+    const uint8_t *chunk_data = g_transfer_state.program_data + g_transfer_state.program_bytes_transferred;
 
     // Pad chunk to 60 bytes if needed
     uint8_t padded_chunk[60] = {0};
     memcpy(padded_chunk, chunk_data, chunk_size);
 
     // Update read position
-    g_transfer_state.bytes_read += chunk_size;
+    g_transfer_state.program_bytes_transferred += chunk_size;
 
-    ESP_LOGD(TAG, "Read chunk: %lu/%lu bytes", (unsigned long)g_transfer_state.bytes_read, (unsigned long)g_transfer_state.total_program_size);
+    ESP_LOGD(TAG, "Read chunk: %lu/%lu bytes", (unsigned long)g_transfer_state.program_bytes_transferred, (unsigned long)g_transfer_state.total_program_size);
 
     // Send chunk data
     send_response_with_data(RESP_OK, padded_chunk, 60);
 
     // If we've read all data, reset state
-    if (g_transfer_state.bytes_read >= g_transfer_state.total_program_size) {
+    if (g_transfer_state.program_bytes_transferred >= g_transfer_state.total_program_size) {
         ESP_LOGI(TAG, "Read session completed successfully: %lu bytes", (unsigned long)g_transfer_state.total_program_size);
         g_transfer_state.state = TRANSFER_STATE_IDLE;
         g_transfer_state.total_program_size = 0;
-        g_transfer_state.bytes_read = 0;
+        g_transfer_state.program_bytes_transferred = 0;
         g_transfer_state.program_data = NULL;
     }
 }
@@ -319,40 +370,40 @@ static void handle_nvs_set_start(const uint8_t *data) {
 
     // Validate value length based on type
     switch (value_type) {
-    case 0x01:  // u8
-    case 0x02:  // i8
+    case NVS_TYPE_U8:
+    case NVS_TYPE_I8:
         if (value_length != 1) {
             ESP_LOGE(TAG, "Invalid length for u8/i8: %lu", (unsigned long)value_length);
             send_response(RESP_ERROR);
             return;
         }
         break;
-    case 0x03:  // u16
-    case 0x04:  // i16
+    case NVS_TYPE_U16:
+    case NVS_TYPE_I16:
         if (value_length != 2) {
             ESP_LOGE(TAG, "Invalid length for u16/i16: %lu", (unsigned long)value_length);
             send_response(RESP_ERROR);
             return;
         }
         break;
-    case 0x05:  // u32
-    case 0x06:  // i32
+    case NVS_TYPE_U32:
+    case NVS_TYPE_I32:
         if (value_length != 4) {
             ESP_LOGE(TAG, "Invalid length for u32/i32: %lu", (unsigned long)value_length);
             send_response(RESP_ERROR);
             return;
         }
         break;
-    case 0x07:  // u64
-    case 0x08:  // i64
+    case NVS_TYPE_U64:
+    case NVS_TYPE_I64:
         if (value_length != 8) {
             ESP_LOGE(TAG, "Invalid length for u64/i64: %lu", (unsigned long)value_length);
             send_response(RESP_ERROR);
             return;
         }
         break;
-    case 0x10:  // string
-    case 0x20:  // blob
+    case NVS_TYPE_STR:
+    case NVS_TYPE_BLOB:
         if (value_length > 1024) {
             ESP_LOGE(TAG, "Value too large: %lu bytes", (unsigned long)value_length);
             send_response(RESP_ERROR);
@@ -387,24 +438,25 @@ static void handle_nvs_set_data(const uint8_t *data) {
     }
 
     // Calculate how many bytes to copy (60 bytes max)
-    size_t bytes_remaining = g_transfer_state.nvs_value_length - g_transfer_state.transfer_buffer_used;
+    size_t bytes_remaining = g_transfer_state.nvs_value_length - g_transfer_state.transfer_buffer_transferred;
     size_t bytes_to_copy = (bytes_remaining > 60) ? 60 : bytes_remaining;
 
     if (bytes_to_copy > 0) {
         // Check if buffer would overflow
-        if (g_transfer_state.transfer_buffer_used + bytes_to_copy > sizeof(g_transfer_state.transfer_buffer)) {
+        if (g_transfer_state.transfer_buffer_transferred + bytes_to_copy > TRANSFER_BUFFER_SIZE) {
             ESP_LOGE(TAG, "Transfer buffer overflow");
+            g_transfer_state.state = TRANSFER_STATE_ERROR;
             send_response(RESP_ERROR);
             return;
         }
 
-        memcpy(&g_transfer_state.transfer_buffer[g_transfer_state.transfer_buffer_used],
+        memcpy(&g_transfer_state.transfer_buffer[g_transfer_state.transfer_buffer_transferred],
                &data[4],
                bytes_to_copy);
-        g_transfer_state.transfer_buffer_used += bytes_to_copy;
+        g_transfer_state.transfer_buffer_transferred += bytes_to_copy;
     }
 
-    ESP_LOGD(TAG, "NVS set data: %lu/%lu bytes", (unsigned long)g_transfer_state.transfer_buffer_used, (unsigned long)g_transfer_state.nvs_value_length);
+    ESP_LOGD(TAG, "NVS set data: %lu/%lu bytes", (unsigned long)g_transfer_state.transfer_buffer_transferred, (unsigned long)g_transfer_state.nvs_value_length);
 
     send_response(RESP_OK);
 }
@@ -417,8 +469,9 @@ static void handle_nvs_set_finish(void) {
         return;
     }
 
-    if (g_transfer_state.transfer_buffer_used != g_transfer_state.nvs_value_length) {
-        ESP_LOGE(TAG, "NVS set incomplete: received %lu, expected %lu", (unsigned long)g_transfer_state.transfer_buffer_used, (unsigned long)g_transfer_state.nvs_value_length);
+    if (g_transfer_state.transfer_buffer_transferred != g_transfer_state.nvs_value_length) {
+        ESP_LOGE(TAG, "NVS set incomplete: received %lu, expected %lu", (unsigned long)g_transfer_state.transfer_buffer_transferred, (unsigned long)g_transfer_state.nvs_value_length);
+        g_transfer_state.state = TRANSFER_STATE_ERROR;
         send_response(RESP_ERROR);
         return;
     }
@@ -435,34 +488,29 @@ static void handle_nvs_set_finish(void) {
     // Write value based on type
     err = ESP_FAIL;
     switch (g_transfer_state.nvs_value_type) {
-    case 0x01:  // u8
+    case NVS_TYPE_U8:
         err = nvs_set_u8(nvs_handle, g_transfer_state.nvs_key, g_transfer_state.transfer_buffer[0]);
         break;
-    case 0x02:  // i8
+    case NVS_TYPE_I8:
         err = nvs_set_i8(nvs_handle, g_transfer_state.nvs_key, (int8_t)g_transfer_state.transfer_buffer[0]);
         break;
-    case 0x03:  // u16
-    {
+    case NVS_TYPE_U16: {
         uint16_t value = g_transfer_state.transfer_buffer[0] | (g_transfer_state.transfer_buffer[1] << 8);
         err = nvs_set_u16(nvs_handle, g_transfer_state.nvs_key, value);
     } break;
-    case 0x04:  // i16
-    {
+    case NVS_TYPE_I16: {
         int16_t value = g_transfer_state.transfer_buffer[0] | (g_transfer_state.transfer_buffer[1] << 8);
         err = nvs_set_i16(nvs_handle, g_transfer_state.nvs_key, value);
     } break;
-    case 0x05:  // u32
-    {
+    case NVS_TYPE_U32: {
         uint32_t value = extract_u32(g_transfer_state.transfer_buffer);
         err = nvs_set_u32(nvs_handle, g_transfer_state.nvs_key, value);
     } break;
-    case 0x06:  // i32
-    {
+    case NVS_TYPE_I32: {
         int32_t value = (int32_t)extract_u32(g_transfer_state.transfer_buffer);
         err = nvs_set_i32(nvs_handle, g_transfer_state.nvs_key, value);
     } break;
-    case 0x07:  // u64
-    {
+    case NVS_TYPE_U64: {
         uint64_t value = (uint64_t)g_transfer_state.transfer_buffer[0] |
                          ((uint64_t)g_transfer_state.transfer_buffer[1] << 8) |
                          ((uint64_t)g_transfer_state.transfer_buffer[2] << 16) |
@@ -473,16 +521,15 @@ static void handle_nvs_set_finish(void) {
                          ((uint64_t)g_transfer_state.transfer_buffer[7] << 56);
         err = nvs_set_u64(nvs_handle, g_transfer_state.nvs_key, value);
     } break;
-    case 0x08:  // i64
-    {
+    case NVS_TYPE_I64: {
         int64_t value = (int64_t)extract_u32(g_transfer_state.transfer_buffer) |
                         ((int64_t)extract_u32(&g_transfer_state.transfer_buffer[4]) << 32);
         err = nvs_set_i64(nvs_handle, g_transfer_state.nvs_key, value);
     } break;
-    case 0x10:  // string
+    case NVS_TYPE_STR:
         err = nvs_set_str(nvs_handle, g_transfer_state.nvs_key, (const char *)g_transfer_state.transfer_buffer);
         break;
-    case 0x20:  // blob
+    case NVS_TYPE_BLOB:
         err = nvs_set_blob(nvs_handle, g_transfer_state.nvs_key, g_transfer_state.transfer_buffer, g_transfer_state.nvs_value_length);
         break;
     }
@@ -512,6 +559,9 @@ static void handle_nvs_set_finish(void) {
 
 // Handle CMD_NVS_GET_START command
 static void handle_nvs_get_start(const uint8_t *data) {
+    // Reset transfer buffer for new operation
+    reset_transfer_buffer();
+
     // Copy key (null-terminated, max 15 chars)
     strncpy(g_transfer_state.nvs_key, (const char *)&data[4], 15);
     g_transfer_state.nvs_key[15] = '\0';
@@ -543,51 +593,14 @@ static void handle_nvs_get_start(const uint8_t *data) {
         return;
     }
 
-    // Convert NVS type to our internal type
-    switch (nvs_type) {
-    case NVS_TYPE_U8:
-        g_transfer_state.nvs_value_type = 0x01;
-        break;
-    case NVS_TYPE_I8:
-        g_transfer_state.nvs_value_type = 0x02;
-        break;
-    case NVS_TYPE_U16:
-        g_transfer_state.nvs_value_type = 0x03;
-        break;
-    case NVS_TYPE_I16:
-        g_transfer_state.nvs_value_type = 0x04;
-        break;
-    case NVS_TYPE_U32:
-        g_transfer_state.nvs_value_type = 0x05;
-        break;
-    case NVS_TYPE_I32:
-        g_transfer_state.nvs_value_type = 0x06;
-        break;
-    case NVS_TYPE_U64:
-        g_transfer_state.nvs_value_type = 0x07;
-        break;
-    case NVS_TYPE_I64:
-        g_transfer_state.nvs_value_type = 0x08;
-        break;
-    case NVS_TYPE_STR:
-        g_transfer_state.nvs_value_type = 0x10;
-        break;
-    case NVS_TYPE_BLOB:
-        g_transfer_state.nvs_value_type = 0x20;
-        break;
-    default:
-        ESP_LOGE(TAG, "Unknown NVS type: %d", nvs_type);
-        nvs_close(nvs_handle);
-        send_response(RESP_ERROR);
-        return;
-    }
+    // Store the NVS type directly (no conversion needed)
+    g_transfer_state.nvs_value_type = nvs_type;
 
     // Read value based on type
     err = ESP_FAIL;
     size_t value_size = 0;
     switch (g_transfer_state.nvs_value_type) {
-    case 0x01:  // u8
-    {
+    case NVS_TYPE_U8: {
         uint8_t value;
         err = nvs_get_u8(nvs_handle, g_transfer_state.nvs_key, &value);
         if (err == ESP_OK) {
@@ -595,8 +608,7 @@ static void handle_nvs_get_start(const uint8_t *data) {
             value_size = 1;
         }
     } break;
-    case 0x02:  // i8
-    {
+    case NVS_TYPE_I8: {
         int8_t value;
         err = nvs_get_i8(nvs_handle, g_transfer_state.nvs_key, &value);
         if (err == ESP_OK) {
@@ -604,8 +616,7 @@ static void handle_nvs_get_start(const uint8_t *data) {
             value_size = 1;
         }
     } break;
-    case 0x03:  // u16
-    {
+    case NVS_TYPE_U16: {
         uint16_t value;
         err = nvs_get_u16(nvs_handle, g_transfer_state.nvs_key, &value);
         if (err == ESP_OK) {
@@ -614,8 +625,7 @@ static void handle_nvs_get_start(const uint8_t *data) {
             value_size = 2;
         }
     } break;
-    case 0x04:  // i16
-    {
+    case NVS_TYPE_I16: {
         int16_t value;
         err = nvs_get_i16(nvs_handle, g_transfer_state.nvs_key, &value);
         if (err == ESP_OK) {
@@ -624,8 +634,7 @@ static void handle_nvs_get_start(const uint8_t *data) {
             value_size = 2;
         }
     } break;
-    case 0x05:  // u32
-    {
+    case NVS_TYPE_U32: {
         uint32_t value;
         err = nvs_get_u32(nvs_handle, g_transfer_state.nvs_key, &value);
         if (err == ESP_OK) {
@@ -636,8 +645,7 @@ static void handle_nvs_get_start(const uint8_t *data) {
             value_size = 4;
         }
     } break;
-    case 0x06:  // i32
-    {
+    case NVS_TYPE_I32: {
         int32_t value;
         err = nvs_get_i32(nvs_handle, g_transfer_state.nvs_key, &value);
         if (err == ESP_OK) {
@@ -648,8 +656,7 @@ static void handle_nvs_get_start(const uint8_t *data) {
             value_size = 4;
         }
     } break;
-    case 0x07:  // u64
-    {
+    case NVS_TYPE_U64: {
         uint64_t value;
         err = nvs_get_u64(nvs_handle, g_transfer_state.nvs_key, &value);
         if (err == ESP_OK) {
@@ -659,8 +666,7 @@ static void handle_nvs_get_start(const uint8_t *data) {
             value_size = 8;
         }
     } break;
-    case 0x08:  // i64
-    {
+    case NVS_TYPE_I64: {
         int64_t value;
         err = nvs_get_i64(nvs_handle, g_transfer_state.nvs_key, &value);
         if (err == ESP_OK) {
@@ -670,16 +676,14 @@ static void handle_nvs_get_start(const uint8_t *data) {
             value_size = 8;
         }
     } break;
-    case 0x10:  // string
-    {
+    case NVS_TYPE_STR: {
         size_t required_size = sizeof(g_transfer_state.transfer_buffer);
         err = nvs_get_str(nvs_handle, g_transfer_state.nvs_key, (char *)g_transfer_state.transfer_buffer, &required_size);
         if (err == ESP_OK) {
             value_size = required_size - 1;  // Exclude null terminator
         }
     } break;
-    case 0x20:  // blob
-    {
+    case NVS_TYPE_BLOB: {
         size_t required_size = sizeof(g_transfer_state.transfer_buffer);
         err = nvs_get_blob(nvs_handle, g_transfer_state.nvs_key, g_transfer_state.transfer_buffer, &required_size);
         if (err == ESP_OK) {
@@ -700,9 +704,6 @@ static void handle_nvs_get_start(const uint8_t *data) {
     g_transfer_state.nvs_value_length = value_size;
     g_transfer_state.state = TRANSFER_STATE_NVS_GETTING;
 
-    // Reset transfer buffer for new operation
-    reset_transfer_buffer();
-
     ESP_LOGI(TAG, "NVS get started: key='%s', type=0x%02X, length=%lu", g_transfer_state.nvs_key, g_transfer_state.nvs_value_type, (unsigned long)value_size);
 
     // Send first chunk with type and size
@@ -717,7 +718,7 @@ static void handle_nvs_get_start(const uint8_t *data) {
     size_t first_chunk_size = (value_size > 55) ? 55 : value_size;
     if (first_chunk_size > 0) {
         memcpy(&response_data[5], g_transfer_state.transfer_buffer, first_chunk_size);
-        g_transfer_state.transfer_buffer_used = first_chunk_size;
+        g_transfer_state.transfer_buffer_transferred = first_chunk_size;
     }
 
     send_response_with_data(RESP_OK, response_data, 60);
@@ -731,25 +732,26 @@ static void handle_nvs_get_data(void) {
         return;
     }
 
-    if (g_transfer_state.transfer_buffer_used >= g_transfer_state.nvs_value_length) {
+    if (g_transfer_state.transfer_buffer_transferred >= g_transfer_state.nvs_value_length) {
         ESP_LOGE(TAG, "All NVS data already sent");
+        g_transfer_state.state = TRANSFER_STATE_ERROR;
         send_response(RESP_ERROR);
         return;
     }
 
     // Calculate how many bytes to send (60 bytes max)
-    size_t bytes_remaining = g_transfer_state.nvs_value_length - g_transfer_state.transfer_buffer_used;
+    size_t bytes_remaining = g_transfer_state.nvs_value_length - g_transfer_state.transfer_buffer_transferred;
     size_t bytes_to_send = (bytes_remaining > 60) ? 60 : bytes_remaining;
 
     // Send chunk
     send_response_with_data(RESP_OK,
-                            &g_transfer_state.transfer_buffer[g_transfer_state.transfer_buffer_used],
+                            &g_transfer_state.transfer_buffer[g_transfer_state.transfer_buffer_transferred],
                             bytes_to_send);
 
-    g_transfer_state.transfer_buffer_used += bytes_to_send;
+    g_transfer_state.transfer_buffer_transferred += bytes_to_send;
 
     // If we've sent all data, reset state
-    if (g_transfer_state.transfer_buffer_used >= g_transfer_state.nvs_value_length) {
+    if (g_transfer_state.transfer_buffer_transferred >= g_transfer_state.nvs_value_length) {
         ESP_LOGI(TAG, "NVS get completed: key='%s'", g_transfer_state.nvs_key);
         g_transfer_state.state = TRANSFER_STATE_IDLE;
     }
