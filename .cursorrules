@@ -1,14 +1,14 @@
-# Cursor Rules for ESP-IDF PlatformIO Project
+# Cursor Rules for ODKey ESP-IDF PlatformIO Project
 # Target: Adafruit ESP32-S2 Feather Board
 
 ## Project Context
-This is a PlatformIO project using the ESP-IDF framework targeting the Adafruit ESP32-S2 Feather board. The project uses C/C++ for embedded development on ESP32-S2 microcontroller.
+This is a PlatformIO project using the ESP-IDF framework targeting the Adafruit ESP32-S2 Feather board. The project includes both C/C++ firmware and Python development tools for ODKeyScript compilation and USB communication.
 
 ## Development Guidelines
 
 ### Code Style & Standards
 - Follow ESP-IDF coding standards and conventions
-- Use consistent indentation (4 spaces for C/C++)
+- Use consistent indentation (4 spaces for C/C++, 4 spaces for Python)
 - Prefer descriptive variable and function names
 - Add comprehensive comments for complex logic
 - Use ESP-IDF logging macros (ESP_LOGI, ESP_LOGW, ESP_LOGE, etc.) instead of printf
@@ -20,6 +20,7 @@ This is a PlatformIO project using the ESP-IDF framework targeting the Adafruit 
 - Use proper error handling with esp_err_t return types
 - Implement proper task management with FreeRTOS
 - Use ESP-IDF memory management functions (malloc/free with proper checks)
+- Use official ESP-IDF constants (e.g., NVS_TYPE_* from nvs.h) instead of custom ones, when possible
 
 ### Hardware-Specific Considerations
 - ESP32-S2 has USB OTG capabilities - consider USB device/host functionality
@@ -27,6 +28,7 @@ This is a PlatformIO project using the ESP-IDF framework targeting the Adafruit 
 - GPIO pins follow ESP32-S2 pinout for Adafruit Feather board
 - Consider power management for battery-powered applications
 - Use appropriate voltage levels (3.3V logic)
+- Flash page size is 4096 bytes - align operations accordingly
 
 ### File Organization
 - Keep main application logic in `src/main.c`
@@ -34,6 +36,38 @@ This is a PlatformIO project using the ESP-IDF framework targeting the Adafruit 
 - Use header files in `include/` directory for public interfaces
 - Place component-specific code in separate directories
 - Follow ESP-IDF component structure for reusable modules
+- Use descriptive file names that match their functionality
+
+### Naming Conventions
+- **C/C++ Variables**: snake_case (e.g., `transfer_buffer_transferred`, `program_bytes_transferred`)
+- **C/C++ Functions**: snake_case (e.g., `handle_program_write_chunk`, `reset_transfer_buffer`)
+- **C/C++ Constants**: UPPER_SNAKE_CASE (e.g., `TRANSFER_BUFFER_SIZE`, `CMD_PROGRAM_WRITE_START`)
+- **C/C++ Types**: snake_case with _t suffix (e.g., `transfer_state_t`, `vm_context_t`)
+- **C/C++ Global Variables**: g_ prefix (e.g., `g_transfer_state`, `g_initialized`)
+- **C/C++ Static Variables**: No prefix needed
+- **Python Classes**: PascalCase (e.g., `ODKeyConfig`, `Compiler`)
+- **Python Functions/Variables**: snake_case (e.g., `download_program`, `nvs_set_int`)
+- **Python Constants**: UPPER_SNAKE_CASE (e.g., `NVS_TYPE_U8`, `CMD_PROGRAM_WRITE_START`)
+
+### Error Handling Patterns
+- **C/C++**: Use consistent error state management with `TRANSFER_STATE_ERROR`
+- **C/C++**: Set error state for transfer operation failures, not validation errors
+- **C/C++**: Use ESP-IDF error codes and `esp_err_to_name()` for logging
+- **Python**: Use custom exception classes (e.g., `ODKeyUploadError`, `CompileError`)
+- **Python**: Provide clear error messages with context
+
+### Memory Management
+- Use ESP-IDF memory management functions with proper error checking
+- Prefer stack allocation for small, temporary data
+- Use proper buffer size constants (e.g., `TRANSFER_BUFFER_SIZE`, `PROGRAM_STORAGE_PAGE_SIZE`)
+- Avoid magic numbers - define constants for buffer sizes, timeouts, etc.
+- Use `memset()` for buffer initialization and clearing
+
+### State Management
+- Use enum types for state machines (e.g., `transfer_state_t`)
+- Implement proper state validation before operations
+- Reset state appropriately on completion or error
+- Use descriptive state names that indicate the current operation
 
 ### Build System
 - Use PlatformIO build system with ESP-IDF framework
@@ -42,7 +76,7 @@ This is a PlatformIO project using the ESP-IDF framework targeting the Adafruit 
 - Consider using ESP-IDF menuconfig for configuration
 
 ### Debugging & Development
-- Use ESP-IDF logging levels appropriately
+- Use ESP-IDF logging levels appropriately (ESP_LOGD, ESP_LOGI, ESP_LOGW, ESP_LOGE)
 - Implement proper error handling and recovery
 - Use ESP-IDF monitoring tools (idf.py monitor)
 - Consider using ESP-IDF debugging features (GDB, core dumps)
@@ -54,6 +88,7 @@ This is a PlatformIO project using the ESP-IDF framework targeting the Adafruit 
 - Optimize for power consumption when needed
 - Use ESP-IDF performance monitoring tools
 - Consider using PSRAM if available
+- Buffer operations to reduce flash writes (4KB page alignment)
 
 ### Security Best Practices
 - Use ESP-IDF security features (secure boot, flash encryption)
@@ -61,6 +96,15 @@ This is a PlatformIO project using the ESP-IDF framework targeting the Adafruit 
 - Use HTTPS/TLS for network communications
 - Store sensitive data securely (NVS with encryption)
 - Follow ESP-IDF security guidelines
+
+### Python Development (odkey_tools)
+- Use type hints for all function parameters and return values
+- Follow PEP 8 style guidelines with Black formatting (88 character line limit)
+- Use descriptive docstrings for classes and functions
+- Implement proper exception handling with custom exception classes
+- Use modern Python features (Python 3.12+)
+- Use `uv` for dependency management
+- Follow the existing package structure and naming conventions
 
 ### Common ESP-IDF Patterns
 ```c
@@ -77,6 +121,18 @@ xTaskCreate(task_function, "task_name", 4096, NULL, 5, &task_handle);
 // WiFi initialization
 wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
 esp_wifi_init(&cfg);
+
+// Buffer management
+#define BUFFER_SIZE 4096
+uint8_t buffer[BUFFER_SIZE];
+memset(buffer, 0, sizeof(buffer));
+
+// State management
+typedef enum {
+    STATE_IDLE,
+    STATE_WORKING,
+    STATE_ERROR
+} state_t;
 ```
 
 ### PlatformIO Integration
@@ -92,14 +148,17 @@ esp_wifi_init(&cfg);
 - Document hardware connections and pin assignments
 - Keep README updated with build and usage instructions
 - Document any custom components or configurations
+- Use consistent comment formatting
 
 ## File Extensions
 - `.c` - C source files
 - `.h` - Header files
 - `.cpp` - C++ source files (if using C++)
+- `.py` - Python source files
 - `CMakeLists.txt` - Build configuration
 - `sdkconfig` - ESP-IDF configuration
 - `platformio.ini` - PlatformIO configuration
+- `pyproject.toml` - Python project configuration
 
 ## Dependencies
 - ESP-IDF framework components
@@ -107,6 +166,8 @@ esp_wifi_init(&cfg);
 - Adafruit Feather ESP32-S2 board support
 - Standard C library functions
 - FreeRTOS APIs (through ESP-IDF)
+- Python 3.12+ with type hints
+- hidapi for USB HID communication
 
 ## Testing
 - Test on actual Adafruit ESP32-S2 Feather hardware
@@ -114,3 +175,12 @@ esp_wifi_init(&cfg);
 - Test power consumption and performance
 - Validate WiFi and other peripheral functionality
 - Test with different power sources (USB vs battery)
+- Use Python pytest for tool testing
+
+## Code Quality
+- Use clang-format for C/C++ code formatting (Google style, 4 spaces)
+- Use Black for Python code formatting (88 character line limit)
+- Use mypy for Python type checking
+- Use flake8 for Python linting
+- Use isort for Python import sorting
+- Run linting and formatting before commits
