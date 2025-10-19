@@ -1,54 +1,43 @@
-#include "freertos/task.h"
-#include "http_api.h"
+#include "wifi.h"
 #include <string.h>
-#include <sys/time.h>
 #include "esp_event.h"
-#include "esp_http_server.h"
 #include "esp_log.h"
 #include "esp_netif.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "freertos/task.h"
+#include "http_server.h"
 #include "mdns.h"
 #include "nvs.h"
 #include "nvs_config.h"
-#include "nvs_flash.h"
 
-static const char *TAG = "http_api";
+static const char *TAG = "wifi";
 
 // Configuration defaults
 #define WIFI_SSID_DEFAULT ""
 #define WIFI_PASSWORD_DEFAULT ""
 #define WIFI_CONNECT_TIMEOUT_DEFAULT 10000
-#define HTTP_SERVER_PORT_DEFAULT 80
 #define MDNS_HOSTNAME_DEFAULT "odkey"
 #define MDNS_INSTANCE_DEFAULT "ODKey Device"
-
-// HTTP Server Configuration
-#define HTTP_SERVER_MAX_URI_LEN 512
-#define HTTP_SERVER_MAX_REQ_HDR_LEN 512
 
 // WiFi event group bits
 #define WIFI_STA_READY_BIT BIT0
 #define WIFI_CONNECTED_BIT BIT1
 #define WIFI_DISCONNECTED_BIT BIT2
 
-struct http_api_config_t {
+struct wifi_config_t {
     char ssid[32];
     char password[64];
     uint32_t connect_timeout_ms;
-    uint16_t server_port;
     char mdns_hostname[32];
     char mdns_instance[64];
-} g_http_api_config = {0};
-
-// HTTP server handle
-static httpd_handle_t g_server = NULL;
+} g_wifi_config = {0};
 
 // WiFi state
 static EventGroupHandle_t g_wifi_event_group = NULL;
 static char g_ip_address[16] = {0};
+static bool g_wifi_connected = false;
 
 // Task handle
 static TaskHandle_t g_wifi_task_handle = NULL;
@@ -60,74 +49,19 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
         xEventGroupSetBits(g_wifi_event_group, WIFI_STA_READY_BIT);
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         ESP_LOGI(TAG, "WiFi disconnected");
+        g_wifi_connected = false;
         xEventGroupSetBits(g_wifi_event_group, WIFI_DISCONNECTED_BIT);
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
         snprintf(g_ip_address, sizeof(g_ip_address), IPSTR, IP2STR(&event->ip_info.ip));
         ESP_LOGI(TAG, "Got IP: %s", g_ip_address);
+        g_wifi_connected = true;
         xEventGroupSetBits(g_wifi_event_group, WIFI_CONNECTED_BIT);
     }
 }
 
-// HTTP GET /api/status handler
-static esp_err_t status_handler(httpd_req_t *req) {
-    // Get uptime
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    uint64_t uptime_ms = (uint64_t)tv.tv_sec * 1000 + tv.tv_usec / 1000;
-
-    // Build JSON response
-    char response[256];
-    snprintf(response, sizeof(response),
-             "{"
-             "\"wifi_mode\":\"sta\","
-             "\"ip_address\":\"%s\","
-             "\"uptime_ms\":%llu"
-             "}",
-             g_ip_address,
-             uptime_ms);
-
-    // Set content type and send response
-    httpd_resp_set_type(req, "application/json");
-    httpd_resp_send(req, response, HTTPD_RESP_USE_STRLEN);
-
-    return ESP_OK;
-}
-
-// Start HTTP server
-static esp_err_t start_http_server(void) {
-    if (g_server != NULL) {
-        ESP_LOGW(TAG, "HTTP server already running");
-        return ESP_OK;
-    }
-
-    httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-    config.server_port = g_http_api_config.server_port;
-    config.max_uri_handlers = 8;
-    config.max_resp_headers = 8;
-    config.max_open_sockets = 7;
-
-    // Start the httpd server
-    ESP_LOGI(TAG, "Starting HTTP server on port %d", config.server_port);
-    if (httpd_start(&g_server, &config) == ESP_OK) {
-        // Register URI handlers
-        httpd_uri_t status_uri = {
-            .uri = "/api/status",
-            .method = HTTP_GET,
-            .handler = status_handler,
-            .user_ctx = NULL};
-        httpd_register_uri_handler(g_server, &status_uri);
-
-        ESP_LOGI(TAG, "HTTP server started successfully");
-        return ESP_OK;
-    }
-
-    ESP_LOGE(TAG, "Error starting HTTP server");
-    return ESP_FAIL;
-}
-
 // Get WiFi credentials from NVS or use defaults
-static bool load_configuration(struct http_api_config_t *config) {
+static bool load_wifi_configuration(struct wifi_config_t *config) {
     nvs_handle_t nvs_handle;
     esp_err_t err;
     size_t required_size;
@@ -143,7 +77,7 @@ static bool load_configuration(struct http_api_config_t *config) {
 
     // Try to get SSID
     required_size = sizeof(config->ssid);
-    err = nvs_get_str(nvs_handle, NVS_KEY_WIFI_SSID, g_http_api_config.ssid, &required_size);
+    err = nvs_get_str(nvs_handle, NVS_KEY_WIFI_SSID, config->ssid, &required_size);
     if (err == ESP_OK) {
         ESP_LOGI(TAG, "Found SSID in NVS: %s", config->ssid);
     } else {
@@ -168,16 +102,6 @@ static bool load_configuration(struct http_api_config_t *config) {
     } else {
         ESP_LOGI(TAG, "Connect timeout not found in NVS, using default");
         config->connect_timeout_ms = WIFI_CONNECT_TIMEOUT_DEFAULT;
-    }
-
-    // Try to get server port
-    required_size = sizeof(config->server_port);
-    err = nvs_get_u16(nvs_handle, NVS_KEY_HTTP_SERVER_PORT, &config->server_port);
-    if (err == ESP_OK) {
-        ESP_LOGI(TAG, "Found server port in NVS: %d", config->server_port);
-    } else {
-        ESP_LOGI(TAG, "Server port not found in NVS, using default");
-        config->server_port = HTTP_SERVER_PORT_DEFAULT;
     }
 
     // Try to get mDNS hostname
@@ -214,27 +138,20 @@ static esp_err_t init_mdns(void) {
     }
 
     // Set hostname
-    err = mdns_hostname_set(g_http_api_config.mdns_hostname);
+    err = mdns_hostname_set(g_wifi_config.mdns_hostname);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to set mDNS hostname: %s", esp_err_to_name(err));
         return err;
     }
 
     // Set instance name
-    err = mdns_instance_name_set(g_http_api_config.mdns_instance);
+    err = mdns_instance_name_set(g_wifi_config.mdns_instance);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to set mDNS instance name: %s", esp_err_to_name(err));
         return err;
     }
 
-    // Add HTTP service
-    err = mdns_service_add(NULL, "_http", "_tcp", g_http_api_config.server_port, NULL, 0);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to add mDNS HTTP service: %s", esp_err_to_name(err));
-        return err;
-    }
-
-    ESP_LOGI(TAG, "mDNS initialized: %s.local", g_http_api_config.mdns_hostname);
+    ESP_LOGI(TAG, "mDNS initialized: %s.local", g_wifi_config.mdns_hostname);
     return ESP_OK;
 }
 
@@ -272,8 +189,8 @@ static esp_err_t wifi_init_sta(void) {
     };
 
     // Copy credentials to wifi_config
-    strncpy((char *)wifi_config.sta.ssid, g_http_api_config.ssid, sizeof(wifi_config.sta.ssid) - 1);
-    strncpy((char *)wifi_config.sta.password, g_http_api_config.password, sizeof(wifi_config.sta.password) - 1);
+    strncpy((char *)wifi_config.sta.ssid, g_wifi_config.ssid, sizeof(wifi_config.sta.ssid) - 1);
+    strncpy((char *)wifi_config.sta.password, g_wifi_config.password, sizeof(wifi_config.sta.password) - 1);
     wifi_config.sta.ssid[sizeof(wifi_config.sta.ssid) - 1] = '\0';
     wifi_config.sta.password[sizeof(wifi_config.sta.password) - 1] = '\0';
 
@@ -281,13 +198,12 @@ static esp_err_t wifi_init_sta(void) {
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_start());
 
-    ESP_LOGI(TAG, "WiFi station mode initialized, attempting to connect to %s", g_http_api_config.ssid);
+    ESP_LOGI(TAG, "WiFi station mode initialized, attempting to connect to %s", g_wifi_config.ssid);
     return ESP_OK;
 }
 
 // WiFi management task
 static void wifi_task(void *pvParameters) {
-    bool wifi_connected = false;
     // Initialize WiFi station mode
     if (wifi_init_sta() != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize WiFi station mode");
@@ -297,6 +213,14 @@ static void wifi_task(void *pvParameters) {
     }
     if (init_mdns() != ESP_OK) {
         ESP_LOGW(TAG, "Failed to initialize mDNS, continuing without it");
+    }
+
+    // Initialize HTTP server module
+    if (!http_server_init()) {
+        ESP_LOGE(TAG, "Failed to initialize HTTP server module");
+        g_wifi_task_handle = NULL;
+        vTaskDelete(NULL);
+        return;
     }
 
     // Wait for WiFi station to be ready
@@ -318,7 +242,7 @@ static void wifi_task(void *pvParameters) {
 
     // Main WiFi management loop
     for (;;) {
-        if (wifi_connected) {
+        if (g_wifi_connected) {
             // WiFi is connected - wait for disconnection event
             EventBits_t bits = xEventGroupWaitBits(g_wifi_event_group,
                                                    WIFI_DISCONNECTED_BIT,
@@ -328,14 +252,12 @@ static void wifi_task(void *pvParameters) {
 
             if (bits & WIFI_DISCONNECTED_BIT) {
                 ESP_LOGW(TAG, "WiFi disconnected, stopping HTTP server...");
-                wifi_connected = false;
-
-                // Stop HTTP server if running
-                if (g_server != NULL) {
-                    httpd_stop(g_server);
-                    g_server = NULL;
-                    ESP_LOGI(TAG, "HTTP server stopped due to WiFi disconnection");
+                // Remove HTTP service from mDNS
+                if (mdns_service_remove("_http", "_tcp") != ESP_OK) {
+                    ESP_LOGW(TAG, "Failed to remove mDNS HTTP service");
                 }
+
+                http_server_stop();
             }
         } else {
             // WiFi is disconnected - try to connect with timeout
@@ -347,19 +269,19 @@ static void wifi_task(void *pvParameters) {
                                                    WIFI_CONNECTED_BIT,
                                                    pdTRUE,  // Clear the bit when we get it
                                                    pdFALSE,
-                                                   pdMS_TO_TICKS(g_http_api_config.connect_timeout_ms));
+                                                   pdMS_TO_TICKS(g_wifi_config.connect_timeout_ms));
 
             if (bits & WIFI_CONNECTED_BIT) {
-                ESP_LOGI(TAG, "Connected to WiFi successfully");
-                wifi_connected = true;
-
-                // Start HTTP server if not already running
-                if (g_server == NULL) {
-                    if (start_http_server() == ESP_OK) {
-                        ESP_LOGI(TAG, "HTTP API module ready");
-                    } else {
-                        ESP_LOGE(TAG, "Failed to start HTTP server");
+                ESP_LOGI(TAG, "Connected to WiFi successfully, starting HTTP server...");
+                if (http_server_start() != ESP_OK) {
+                    ESP_LOGE(TAG, "Failed to start HTTP server");
+                } else {
+                    // Add HTTP service to mDNS
+                    esp_err_t err = mdns_service_add(NULL, "_http", "_tcp", http_server_get_port(), NULL, 0);
+                    if (err != ESP_OK) {
+                        ESP_LOGW(TAG, "Failed to add mDNS HTTP service: %s", esp_err_to_name(err));
                     }
+                    ESP_LOGI(TAG, "HTTP server started successfully");
                 }
             } else {
                 // Connection timeout - will retry in next loop iteration
@@ -369,18 +291,18 @@ static void wifi_task(void *pvParameters) {
     }
 }
 
-bool http_api_init(void) {
+bool wifi_init(void) {
     if (g_wifi_task_handle != NULL) {
-        ESP_LOGW(TAG, "HTTP API module already initialized");
+        ESP_LOGW(TAG, "WiFi module already initialized");
         return true;
     }
 
     // Load configuration
-    if (!load_configuration(&g_http_api_config)) {
-        ESP_LOGE(TAG, "Failed to load HTTP API configuration");
+    if (!load_wifi_configuration(&g_wifi_config)) {
+        ESP_LOGE(TAG, "Failed to load WiFi configuration");
         return false;
     }
-    ESP_LOGI(TAG, "HTTP API configuration loaded");
+    ESP_LOGI(TAG, "WiFi configuration loaded");
 
     // Create WiFi management task
     BaseType_t ret = xTaskCreate(wifi_task, "wifi_task", 4096, NULL, 5, &g_wifi_task_handle);
@@ -389,10 +311,18 @@ bool http_api_init(void) {
         return false;
     }
 
-    ESP_LOGI(TAG, "HTTP API module initialization started");
+    ESP_LOGI(TAG, "WiFi module initialization started");
     return true;
 }
 
-bool http_api_is_ready(void) {
-    return (g_server != NULL);
+bool wifi_is_connected(void) {
+    return g_wifi_connected;
+}
+
+const char *wifi_get_ip_address(void) {
+    return g_wifi_connected ? g_ip_address : "";
+}
+
+bool wifi_is_http_ready(void) {
+    return http_server_is_running();
 }

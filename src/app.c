@@ -3,7 +3,6 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "http_api.h"
 #include "nvs_config.h"
 #include "nvs_flash.h"
 #include "program_storage.h"
@@ -11,6 +10,7 @@
 #include "usb_keyboard.h"
 #include "usb_system_config.h"
 #include "vm_task.h"
+#include "wifi.h"
 
 static const char *TAG = "app";
 
@@ -126,9 +126,9 @@ bool app_init(void) {
         return false;
     }
 
-    // Initialize HTTP API module
-    if (!http_api_init()) {
-        ESP_LOGE(TAG, "Failed to initialize HTTP API module");
+    // Initialize WiFi module (which manages HTTP server internally)
+    if (!wifi_init()) {
+        ESP_LOGE(TAG, "Failed to initialize WiFi module");
         return false;
     }
 
