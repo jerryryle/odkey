@@ -334,12 +334,12 @@ Examples:
   %(prog)s upload program.bin                  # Upload pre-compiled bytecode
   %(prog)s download --output program.bin       # Download and save program
   %(prog)s download --disassemble              # Download and display disassembly
-  %(prog)s nvs-set ssid "MyNetwork"            # Set a string value
-  %(prog)s nvs-set boot_count 42 --type u32    # Set an integer value
+  %(prog)s nvs-set wifi_ssid "MyNetwork"       # Set a string value
+  %(prog)s nvs-set http_port 80 --type u16     # Set an integer value
   %(prog)s nvs-set cert --file cert.pem --type blob  # Set blob from file
-  %(prog)s nvs-get ssid                        # Get a value
+  %(prog)s nvs-get wifi_ssid                   # Get a value
   %(prog)s nvs-get cert --output cert.pem      # Get and save to file
-  %(prog)s nvs-delete old_key                  # Delete a key
+  %(prog)s nvs-delete wifi_ssid                # Delete a key
   %(prog)s list-devices                        # List available HID devices
         """,
     )
