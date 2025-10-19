@@ -81,7 +81,7 @@ bool usb_system_config_init(uint8_t interface_num, program_upload_start_callback
     // Reset transfer buffer
     reset_transfer_buffer();
 
-    ESP_LOGI(TAG, "Program transfer module initialized on interface %d", interface_num);
+    ESP_LOGI(TAG, "System configuration module initialized on interface %d", interface_num);
     return true;
 }
 

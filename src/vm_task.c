@@ -8,6 +8,9 @@
 
 static const char *TAG = "vm_task";
 
+#define VM_TASK_STACK_SIZE 4096
+#define VM_TASK_PRIORITY 5
+
 // VM task state
 typedef enum {
     VM_TASK_STATE_IDLE,
@@ -150,7 +153,7 @@ bool vm_task_init(vm_hid_send_callback_t hid_send_callback) {
     }
 
     // Create VM task
-    BaseType_t ret = xTaskCreate(vm_task_function, "vm_task", 4096, NULL, 5, &g_vm_task_handle);
+    BaseType_t ret = xTaskCreate(vm_task_function, "vm_task", VM_TASK_STACK_SIZE, NULL, VM_TASK_PRIORITY, &g_vm_task_handle);
     if (ret != pdPASS) {
         ESP_LOGE(TAG, "Failed to create VM task");
         vQueueDelete(g_program_queue);

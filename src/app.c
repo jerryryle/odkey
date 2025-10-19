@@ -114,13 +114,6 @@ bool app_init(void) {
         return false;
     }
 
-    // Wait for USB device to be ready
-    ESP_LOGI(TAG, "Waiting for USB device to be ready...");
-    while (!usb_core_is_ready()) {
-        vTaskDelay(pdMS_TO_TICKS(10));
-    }
-    ESP_LOGI(TAG, "USB device ready!");
-
     // Initialize VM task
     if (!vm_task_init(usb_keyboard_send_keys)) {
         ESP_LOGE(TAG, "Failed to initialize VM task");

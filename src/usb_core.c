@@ -13,10 +13,6 @@
 
 static const char *TAG = "usb_core";
 
-// Private variables
-static bool g_initialized = false;
-
-#define HID_KEYBOARD_REPORT_ID 1
 #define RAW_HID_REPORT_SIZE 64  // 64 bytes for full flash alignment
 
 /************* TinyUSB descriptors ****************/
@@ -26,7 +22,7 @@ static bool g_initialized = false;
  * @brief Keyboard HID report descriptor (Interface 0)
  */
 const uint8_t keyboard_report_descriptor[] = {
-    TUD_HID_REPORT_DESC_KEYBOARD(HID_REPORT_ID(HID_KEYBOARD_REPORT_ID))};
+    TUD_HID_REPORT_DESC_KEYBOARD()};
 
 /**
  * @brief Raw HID report descriptor (Interface 1)
@@ -134,13 +130,23 @@ void tud_hid_set_protocol_cb(uint8_t instance, uint8_t protocol) {
     (void)protocol;
 }
 
-bool usb_core_init(void) {
-    if (g_initialized) {
-        return true;
+static void device_event_handler(tinyusb_event_t *event, void *arg) {
+    switch (event->id) {
+    case TINYUSB_EVENT_ATTACHED:
+        ESP_LOGI(TAG, "USB device attached");
+        break;
+    case TINYUSB_EVENT_DETACHED:
+        ESP_LOGI(TAG, "USB device detached");
+        break;
+    default:
+        ESP_LOGW(TAG, "Unknown USB event: %d", event->id);
+        break;
     }
+}
 
+bool usb_core_init(void) {
     // Initialize TinyUSB with default configuration
-    tinyusb_config_t tusb_cfg = TINYUSB_DEFAULT_CONFIG();
+    tinyusb_config_t tusb_cfg = TINYUSB_DEFAULT_CONFIG(device_event_handler);
 
     // Override specific descriptor fields
     tusb_cfg.descriptor.device = NULL;  // Use default device descriptor
@@ -158,12 +164,7 @@ bool usb_core_init(void) {
         return false;
     }
 
-    g_initialized = true;
     ESP_LOGI(TAG, "USB core initialized successfully");
 
     return true;
-}
-
-bool usb_core_is_ready(void) {
-    return g_initialized && tud_hid_ready();
 }

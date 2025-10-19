@@ -13,6 +13,7 @@ This is a PlatformIO project using the ESP-IDF framework targeting the Adafruit 
 - Add comprehensive comments for complex logic
 - Use ESP-IDF logging macros (ESP_LOGI, ESP_LOGW, ESP_LOGE, etc.) instead of printf
 - Follow ESP-IDF component structure when creating modules
+- Prefer `for(;;)` over `while(1)`
 
 ### ESP-IDF Specific Patterns
 - Use ESP-IDF APIs and components (esp_*, nvs_*, wifi_*, etc.)
