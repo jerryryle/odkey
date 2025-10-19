@@ -10,6 +10,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "freertos/task.h"
+#include "mdns.h"
 #include "nvs.h"
 #include "nvs_config.h"
 #include "nvs_flash.h"
@@ -21,6 +22,8 @@ static const char *TAG = "http_api";
 #define WIFI_PASSWORD_DEFAULT ""
 #define WIFI_CONNECT_TIMEOUT_DEFAULT 10000
 #define HTTP_SERVER_PORT_DEFAULT 80
+#define MDNS_HOSTNAME_DEFAULT "odkey"
+#define MDNS_INSTANCE_DEFAULT "ODKey Device"
 
 // HTTP Server Configuration
 #define HTTP_SERVER_MAX_URI_LEN 512
@@ -36,6 +39,8 @@ struct http_api_config_t {
     char password[64];
     uint32_t connect_timeout_ms;
     uint16_t server_port;
+    char mdns_hostname[32];
+    char mdns_instance[64];
 } g_http_api_config = {0};
 
 // HTTP server handle
@@ -46,7 +51,7 @@ static EventGroupHandle_t g_wifi_event_group = NULL;
 static char g_ip_address[16] = {0};
 
 // Task handle
-static TaskHandle_t s_wifi_task_handle = NULL;
+static TaskHandle_t g_wifi_task_handle = NULL;
 
 // WiFi event handler
 static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data) {
@@ -175,8 +180,62 @@ static bool load_configuration(struct http_api_config_t *config) {
         config->server_port = HTTP_SERVER_PORT_DEFAULT;
     }
 
+    // Try to get mDNS hostname
+    required_size = sizeof(config->mdns_hostname);
+    err = nvs_get_str(nvs_handle, NVS_KEY_MDNS_HOSTNAME, config->mdns_hostname, &required_size);
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "Found mDNS hostname in NVS: %s", config->mdns_hostname);
+    } else {
+        ESP_LOGI(TAG, "mDNS hostname not found in NVS, using default");
+        strcpy(config->mdns_hostname, MDNS_HOSTNAME_DEFAULT);
+    }
+
+    // Try to get mDNS instance name
+    required_size = sizeof(config->mdns_instance);
+    err = nvs_get_str(nvs_handle, NVS_KEY_MDNS_INSTANCE, config->mdns_instance, &required_size);
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "Found mDNS instance in NVS: %s", config->mdns_instance);
+    } else {
+        ESP_LOGI(TAG, "mDNS instance not found in NVS, using default");
+        strcpy(config->mdns_instance, MDNS_INSTANCE_DEFAULT);
+    }
+
     nvs_close(nvs_handle);
     return true;
+}
+
+// Initialize mDNS service
+static esp_err_t init_mdns(void) {
+    // Initialize mDNS
+    esp_err_t err = mdns_init();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize mDNS: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    // Set hostname
+    err = mdns_hostname_set(g_http_api_config.mdns_hostname);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set mDNS hostname: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    // Set instance name
+    err = mdns_instance_name_set(g_http_api_config.mdns_instance);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set mDNS instance name: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    // Add HTTP service
+    err = mdns_service_add(NULL, "_http", "_tcp", g_http_api_config.server_port, NULL, 0);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to add mDNS HTTP service: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    ESP_LOGI(TAG, "mDNS initialized: %s.local", g_http_api_config.mdns_hostname);
+    return ESP_OK;
 }
 
 // Initialize WiFi in station mode
@@ -232,9 +291,12 @@ static void wifi_task(void *pvParameters) {
     // Initialize WiFi station mode
     if (wifi_init_sta() != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize WiFi station mode");
-        s_wifi_task_handle = NULL;
+        g_wifi_task_handle = NULL;
         vTaskDelete(NULL);
         return;
+    }
+    if (init_mdns() != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to initialize mDNS, continuing without it");
     }
 
     // Wait for WiFi station to be ready
@@ -247,7 +309,7 @@ static void wifi_task(void *pvParameters) {
 
     if (!(bits & WIFI_STA_READY_BIT)) {
         ESP_LOGE(TAG, "Failed to wait for WiFi station ready");
-        s_wifi_task_handle = NULL;
+        g_wifi_task_handle = NULL;
         vTaskDelete(NULL);
         return;
     }
@@ -308,7 +370,7 @@ static void wifi_task(void *pvParameters) {
 }
 
 bool http_api_init(void) {
-    if (s_wifi_task_handle != NULL) {
+    if (g_wifi_task_handle != NULL) {
         ESP_LOGW(TAG, "HTTP API module already initialized");
         return true;
     }
@@ -321,7 +383,7 @@ bool http_api_init(void) {
     ESP_LOGI(TAG, "HTTP API configuration loaded");
 
     // Create WiFi management task
-    BaseType_t ret = xTaskCreate(wifi_task, "wifi_task", 4096, NULL, 5, &s_wifi_task_handle);
+    BaseType_t ret = xTaskCreate(wifi_task, "wifi_task", 4096, NULL, 5, &g_wifi_task_handle);
     if (ret != pdPASS) {
         ESP_LOGE(TAG, "Failed to create WiFi task");
         return false;

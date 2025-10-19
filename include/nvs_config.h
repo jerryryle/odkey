@@ -15,6 +15,10 @@ extern "C" {
 // Http Server Configuration
 #define NVS_KEY_HTTP_SERVER_PORT "http_port"
 
+// mDNS Configuration
+#define NVS_KEY_MDNS_HOSTNAME "mdns_hostname"
+#define NVS_KEY_MDNS_INSTANCE "mdns_instance"
+
 #ifdef __cplusplus
 }
 #endif
