@@ -9,10 +9,17 @@ extern "C" {
 
 /**
  * @brief Initialize the WiFi module
- *        This starts WiFi connection management in a dedicated task
+ *        This initializes WiFi driver and configuration but does not start connection
  * @return true on success, false on failure
  */
 bool wifi_init(void);
+
+/**
+ * @brief Start WiFi connection
+ *        This starts WiFi connection management in a dedicated task
+ * @return true on success, false on failure
+ */
+bool wifi_start(void);
 
 /**
  * @brief Check if WiFi is connected
@@ -25,12 +32,6 @@ bool wifi_is_connected(void);
  * @return IP address string, or empty string if not connected
  */
 const char *wifi_get_ip_address(void);
-
-/**
- * @brief Check if HTTP server is ready (WiFi connected and server running)
- * @return true if ready, false otherwise
- */
-bool wifi_is_http_ready(void);
 
 #ifdef __cplusplus
 }

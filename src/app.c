@@ -1,10 +1,12 @@
 #include "app.h"
 #include "button_handler.h"
+#include "esp_event.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "nvs_config.h"
-#include "nvs_flash.h"
+#include "http_service.h"
+#include "mdns_service.h"
+#include "nvs_odkey.h"
 #include "program_storage.h"
 #include "usb_core.h"
 #include "usb_keyboard.h"
@@ -51,44 +53,15 @@ static const uint8_t test_program[] = {
 static void on_button_press(void);
 static bool on_program_upload_start(void);
 
-// Initialize NVS and create default namespace
-static bool init_nvs(void) {
-    // Initialize NVS
-    esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        ESP_LOGW(TAG, "NVS partition was truncated and needs to be erased");
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        ret = nvs_flash_init();
-    }
-    ESP_ERROR_CHECK(ret);
-
-    // Create default namespace if it doesn't exist
-    nvs_handle_t nvs_handle;
-    ret = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs_handle);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to open NVS namespace '%s': %s", NVS_NAMESPACE, esp_err_to_name(ret));
-        return false;
-    }
-
-    // Commit to ensure namespace is created
-    ret = nvs_commit(nvs_handle);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to commit NVS namespace: %s", esp_err_to_name(ret));
-        nvs_close(nvs_handle);
-        return false;
-    }
-
-    nvs_close(nvs_handle);
-    ESP_LOGI(TAG, "NVS initialized and namespace '%s' created", NVS_NAMESPACE);
-    return true;
-}
-
 bool app_init(void) {
-    // Initialize NVS and create default namespace
-    if (!init_nvs()) {
-        ESP_LOGE(TAG, "Failed to initialize NVS");
+    // Initialize NVS ODKey module
+    if (!nvs_odkey_init()) {
+        ESP_LOGE(TAG, "Failed to initialize NVS ODKey module");
         return false;
     }
+
+    // Initialize event loop (moved from wifi.c)
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
 
     // Initialize program storage
     if (!program_storage_init()) {
@@ -102,13 +75,13 @@ bool app_init(void) {
         return false;
     }
 
-    // Initialize USB keyboard module (interface 0)
+    // Initialize USB keyboard module
     if (!usb_keyboard_init(USB_KEYBOARD_INTERFACE_NUM)) {
         ESP_LOGE(TAG, "Failed to initialize USB keyboard");
         return false;
     }
 
-    // Initialize USB system config module (interface 1)
+    // Initialize USB system config module
     if (!usb_system_config_init(USB_SYSTEM_CONFIG_INTERFACE_NUM, on_program_upload_start)) {
         ESP_LOGE(TAG, "Failed to initialize USB system config");
         return false;
@@ -126,9 +99,26 @@ bool app_init(void) {
         return false;
     }
 
-    // Initialize WiFi module (which manages HTTP server internally)
+    // Initialize WiFi
     if (!wifi_init()) {
-        ESP_LOGE(TAG, "Failed to initialize WiFi module");
+        ESP_LOGE(TAG, "Failed to initialize WiFi");
+        return false;
+    }
+
+    // Initialize mDNS service
+    if (!mdns_service_init()) {
+        ESP_LOGW(TAG, "Failed to initialize mDNS service, continuing without it");
+    }
+
+    // Initialize HTTP service module
+    if (!http_service_init()) {
+        ESP_LOGE(TAG, "Failed to initialize HTTP service");
+        return false;
+    }
+
+    // Start WiFi connection
+    if (!wifi_start()) {
+        ESP_LOGE(TAG, "Failed to start WiFi");
         return false;
     }
 

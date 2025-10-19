@@ -1,5 +1,8 @@
-#ifndef NVS_CONFIG_H
-#define NVS_CONFIG_H
+#ifndef NVS_ODKEY_H
+#define NVS_ODKEY_H
+
+#include <stdbool.h>
+#include "nvs.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -12,15 +15,22 @@ extern "C" {
 #define NVS_KEY_WIFI_PASSWORD "wifi_pw"
 #define NVS_KEY_WIFI_CONNECT_TIMEOUT "wifi_timeout"
 
-// Http Server Configuration
+// Http Service Configuration
 #define NVS_KEY_HTTP_SERVER_PORT "http_port"
 
 // mDNS Configuration
 #define NVS_KEY_MDNS_HOSTNAME "mdns_hostname"
 #define NVS_KEY_MDNS_INSTANCE "mdns_instance"
 
+/**
+ * @brief Initialize the NVS ODKey module
+ *        This initializes NVS flash and ensures the ODKey namespace exists
+ * @return true on success, false on failure
+ */
+bool nvs_odkey_init(void);
+
 #ifdef __cplusplus
 }
 #endif
 
-#endif  // NVS_CONFIG_H
+#endif  // NVS_ODKEY_H
