@@ -4,9 +4,6 @@
 #include "esp_log.h"
 #include "esp_netif.h"
 #include "esp_wifi.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/event_groups.h"
-#include "freertos/task.h"
 #include "nvs_odkey.h"
 
 static const char *TAG = "wifi";
@@ -16,11 +13,6 @@ static const char *TAG = "wifi";
 #define WIFI_PASSWORD_DEFAULT ""
 #define WIFI_CONNECT_TIMEOUT_DEFAULT 10000
 
-// WiFi event group bits
-#define WIFI_STA_READY_BIT BIT0
-#define WIFI_CONNECTED_BIT BIT1
-#define WIFI_DISCONNECTED_BIT BIT2
-
 struct wifi_config_t {
     char ssid[32];
     char password[64];
@@ -28,28 +20,25 @@ struct wifi_config_t {
 } g_wifi_config = {0};
 
 // WiFi state
-static EventGroupHandle_t g_wifi_event_group = NULL;
 static char g_ip_address[16] = {0};
 static bool g_wifi_connected = false;
-
-// Task handle
-static TaskHandle_t g_wifi_task_handle = NULL;
 
 // WiFi event handler
 static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data) {
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
-        ESP_LOGI(TAG, "WiFi station started");
-        xEventGroupSetBits(g_wifi_event_group, WIFI_STA_READY_BIT);
+        ESP_LOGI(TAG, "WiFi station started, attempting to connect...");
+        esp_wifi_connect();
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
-        ESP_LOGI(TAG, "WiFi disconnected");
+        wifi_event_sta_disconnected_t *disconnected = (wifi_event_sta_disconnected_t *)event_data;
+        ESP_LOGW(TAG, "WiFi disconnected (reason: %d), attempting to reconnect...", disconnected->reason);
         g_wifi_connected = false;
-        xEventGroupSetBits(g_wifi_event_group, WIFI_DISCONNECTED_BIT);
+        // ESP-IDF handles both initial connection failures and disconnections with this event
+        esp_wifi_connect();
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
         snprintf(g_ip_address, sizeof(g_ip_address), IPSTR, IP2STR(&event->ip_info.ip));
         ESP_LOGI(TAG, "Got IP: %s", g_ip_address);
         g_wifi_connected = true;
-        xEventGroupSetBits(g_wifi_event_group, WIFI_CONNECTED_BIT);
     }
 }
 
@@ -103,8 +92,6 @@ static bool load_wifi_configuration(struct wifi_config_t *config) {
 
 // Initialize WiFi in station mode (without starting)
 static esp_err_t wifi_init_sta(void) {
-    g_wifi_event_group = xEventGroupCreate();
-
     esp_netif_create_default_wifi_sta();
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
@@ -145,62 +132,9 @@ static esp_err_t wifi_init_sta(void) {
     return ESP_OK;
 }
 
-// WiFi management task
-static void wifi_task(void *pvParameters) {
-    // Wait for WiFi station to be ready
-    ESP_LOGI(TAG, "Waiting for WiFi station to be ready...");
-    EventBits_t bits = xEventGroupWaitBits(g_wifi_event_group,
-                                           WIFI_STA_READY_BIT,
-                                           pdTRUE,  // Clear the bit when we get it
-                                           pdFALSE,
-                                           portMAX_DELAY);  // Wait indefinitely for STA ready
-
-    if (!(bits & WIFI_STA_READY_BIT)) {
-        ESP_LOGE(TAG, "Failed to wait for WiFi station ready");
-        g_wifi_task_handle = NULL;
-        vTaskDelete(NULL);
-        return;
-    }
-
-    ESP_LOGI(TAG, "WiFi station ready, starting connection management");
-
-    // Main WiFi management loop
-    for (;;) {
-        if (g_wifi_connected) {
-            // WiFi is connected - wait for disconnection event
-            EventBits_t bits = xEventGroupWaitBits(g_wifi_event_group,
-                                                   WIFI_DISCONNECTED_BIT,
-                                                   pdTRUE,  // Clear the bit when we get it
-                                                   pdFALSE,
-                                                   portMAX_DELAY);  // Wait indefinitely for disconnection
-
-            if (bits & WIFI_DISCONNECTED_BIT) {
-                ESP_LOGW(TAG, "WiFi disconnected");
-            }
-        } else {
-            // WiFi is disconnected - try to connect with timeout
-            ESP_LOGI(TAG, "Attempting to connect to WiFi...");
-            esp_wifi_connect();
-
-            // Wait for connection with timeout
-            EventBits_t bits = xEventGroupWaitBits(g_wifi_event_group,
-                                                   WIFI_CONNECTED_BIT,
-                                                   pdTRUE,  // Clear the bit when we get it
-                                                   pdFALSE,
-                                                   pdMS_TO_TICKS(g_wifi_config.connect_timeout_ms));
-
-            if (bits & WIFI_CONNECTED_BIT) {
-                ESP_LOGI(TAG, "Connected to WiFi successfully");
-            } else {
-                // Connection timeout - will retry in next loop iteration
-                ESP_LOGW(TAG, "WiFi connection timeout, will retry...");
-            }
-        }
-    }
-}
-
 bool wifi_init(void) {
-    if (g_wifi_task_handle != NULL) {
+    static bool initialized = false;
+    if (initialized) {
         ESP_LOGW(TAG, "WiFi module already initialized");
         return true;
     }
@@ -222,26 +156,22 @@ bool wifi_init(void) {
     }
 
     ESP_LOGI(TAG, "WiFi module initialized");
+    initialized = true;
     return true;
 }
 
 bool wifi_start(void) {
-    if (g_wifi_task_handle != NULL) {
+    static bool started = false;
+    if (started) {
         ESP_LOGW(TAG, "WiFi already started");
         return true;
     }
 
-    // Start WiFi
+    // Start WiFi - the event handler will automatically connect when STA starts
     ESP_ERROR_CHECK(esp_wifi_start());
 
-    // Create WiFi management task
-    BaseType_t ret = xTaskCreate(wifi_task, "wifi_task", 4096, NULL, 5, &g_wifi_task_handle);
-    if (ret != pdPASS) {
-        ESP_LOGE(TAG, "Failed to create WiFi task");
-        return false;
-    }
-
-    ESP_LOGI(TAG, "WiFi started, attempting to connect to %s", g_wifi_config.ssid);
+    ESP_LOGI(TAG, "WiFi started, will attempt to connect to %s", g_wifi_config.ssid);
+    started = true;
     return true;
 }
 
