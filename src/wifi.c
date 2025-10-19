@@ -145,6 +145,10 @@ bool wifi_init(void) {
         return false;
     }
     ESP_LOGI(TAG, "WiFi configuration loaded");
+    if (strcmp(g_wifi_config.ssid, "") == 0 || strcmp(g_wifi_config.password, "") == 0) {
+        ESP_LOGE(TAG, "WiFi SSID or password is empty, not initializing WiFi");
+        return false;
+    }
 
     // Initialize network interface
     ESP_ERROR_CHECK(esp_netif_init());

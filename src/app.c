@@ -101,25 +101,24 @@ bool app_init(void) {
 
     // Initialize WiFi
     if (!wifi_init()) {
-        ESP_LOGE(TAG, "Failed to initialize WiFi");
-        return false;
-    }
+        ESP_LOGE(TAG, "Failed to initialize WiFi. Skipping other network services.");
+    } else {
+        // Initialize mDNS service
+        if (!mdns_service_init()) {
+            ESP_LOGW(TAG, "Failed to initialize mDNS service, continuing without it");
+        }
 
-    // Initialize mDNS service
-    if (!mdns_service_init()) {
-        ESP_LOGW(TAG, "Failed to initialize mDNS service, continuing without it");
-    }
+        // Initialize HTTP service module
+        if (!http_service_init()) {
+            ESP_LOGE(TAG, "Failed to initialize HTTP service");
+            return false;
+        }
 
-    // Initialize HTTP service module
-    if (!http_service_init()) {
-        ESP_LOGE(TAG, "Failed to initialize HTTP service");
-        return false;
-    }
-
-    // Start WiFi connection
-    if (!wifi_start()) {
-        ESP_LOGE(TAG, "Failed to start WiFi");
-        return false;
+        // Start WiFi connection
+        if (!wifi_start()) {
+            ESP_LOGE(TAG, "Failed to start WiFi");
+            return false;
+        }
     }
 
     ESP_LOGI(TAG, "System ready! Press button on GPIO %d to run program", BUTTON_GPIO);
