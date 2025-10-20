@@ -131,7 +131,7 @@ void vm_reset(vm_context_t *ctx) {
     ESP_LOGD(TAG, "VM reset");
 }
 
-vm_error_t vm_start(vm_context_t *ctx, const uint8_t *program, size_t program_size, vm_hid_callback_t hid_callback, vm_delay_callback_t delay_callback) {
+vm_error_t vm_start(vm_context_t *ctx, const uint8_t *program, uint32_t program_size, vm_hid_callback_t hid_callback, vm_delay_callback_t delay_callback) {
     if (ctx == NULL || program == NULL || program_size == 0 || hid_callback == NULL || delay_callback == NULL) {
         return VM_ERROR_INVALID_PROGRAM;
     }
@@ -145,7 +145,7 @@ vm_error_t vm_start(vm_context_t *ctx, const uint8_t *program, size_t program_si
     ctx->hid_callback = hid_callback;
     ctx->delay_callback = delay_callback;
 
-    ESP_LOGI(TAG, "Starting VM execution (program size: %zu bytes)", program_size);
+    ESP_LOGI(TAG, "Starting VM execution (program size: %lu bytes)", (unsigned long)program_size);
     return VM_ERROR_NONE;
 }
 
@@ -167,7 +167,7 @@ vm_error_t vm_step(vm_context_t *ctx) {
     ctx->pc++;
     ctx->instructions_executed++;
 
-    ESP_LOGD(TAG, "Executing opcode 0x%02X at PC %zu", opcode, ctx->pc - 1);
+    ESP_LOGD(TAG, "Executing opcode 0x%02X at PC %lu", opcode, (unsigned long)(ctx->pc - 1));
 
     switch (opcode) {
     case OPCODE_KEYDN: {
@@ -373,7 +373,7 @@ vm_error_t vm_step(vm_context_t *ctx) {
     }
 
     default: {
-        ESP_LOGE(TAG, "Invalid opcode: 0x%02X at PC %zu", opcode, ctx->pc - 1);
+        ESP_LOGE(TAG, "Invalid opcode: 0x%02X at PC %lu", opcode, (unsigned long)(ctx->pc - 1));
         ctx->error = VM_ERROR_INVALID_OPCODE;
         ctx->state = VM_STATE_ERROR;
         break;

@@ -31,7 +31,7 @@ bool vm_task_init(vm_hid_send_callback_t hid_send_callback);
  * @param program_size Size of program in bytes
  * @return true if request was queued successfully, false if already running or error
  */
-bool vm_task_start_program(const uint8_t *program, size_t program_size);
+bool vm_task_start_program(const uint8_t *program, uint32_t program_size);
 
 /**
  * @brief Check if a program is currently running

@@ -22,6 +22,9 @@ extern "C" {
 #define NVS_KEY_MDNS_HOSTNAME "mdns_hostname"
 #define NVS_KEY_MDNS_INSTANCE "mdns_instance"
 
+// HTTP API Configuration
+#define NVS_KEY_HTTP_API_KEY "http_api_key"
+
 /**
  * @brief Initialize the NVS ODKey module
  *        This initializes NVS flash and ensures the ODKey namespace exists

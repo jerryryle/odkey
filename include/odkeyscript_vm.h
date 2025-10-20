@@ -40,8 +40,8 @@ typedef void (*vm_delay_callback_t)(uint16_t ms);
 typedef struct {
     // Program memory
     const uint8_t *program;
-    size_t program_size;
-    size_t pc;  // Program counter
+    uint32_t program_size;
+    uint32_t pc;  // Program counter
 
     // Counters for repeat loops
     uint16_t counters[VM_MAX_COUNTERS];
@@ -85,7 +85,7 @@ bool vm_init(vm_context_t *ctx);
  * @param delay_callback Function to call for delays
  * @return VM error code
  */
-vm_error_t vm_start(vm_context_t *ctx, const uint8_t *program, size_t program_size, vm_hid_callback_t hid_callback, vm_delay_callback_t delay_callback);
+vm_error_t vm_start(vm_context_t *ctx, const uint8_t *program, uint32_t program_size, vm_hid_callback_t hid_callback, vm_delay_callback_t delay_callback);
 
 /**
  * @brief Execute the next opcode in the program

@@ -109,7 +109,7 @@ bool app_init(void) {
         }
 
         // Initialize HTTP service module
-        if (!http_service_init()) {
+        if (!http_service_init(on_program_upload_start)) {
             ESP_LOGE(TAG, "Failed to initialize HTTP service");
             return false;
         }
@@ -129,7 +129,7 @@ bool app_init(void) {
 static void on_button_press(void) {
     if (!vm_task_is_running()) {
         // Load program from flash
-        size_t program_size;
+        uint32_t program_size;
         const uint8_t *program = program_storage_get(&program_size);
 
         // Fallback to test program if no program in flash

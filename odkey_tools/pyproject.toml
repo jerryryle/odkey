@@ -27,18 +27,20 @@ classifiers = [
 
 dependencies = [
     "hidapi>=0.14.0",
+    "requests>=2.31.0",
 ]
 
 [project.scripts]
-odkey = "odkey:main"
+odkey = "odkey.cli:main"
 
 [dependency-groups]
 dev = [
+    "black>=25.9.0",
     "flake8>=6.0.0",
-    "mypy>=1.0.0",
     "hidapi-stubs>=0.14.0",
     "isort>=7.0.0",
-    "black>=25.9.0",
+    "mypy>=1.0.0",
+    "types-requests>=2.31.0",
 ]
 
 [project.urls]

@@ -9,11 +9,18 @@ extern "C" {
 #endif
 
 /**
+ * @brief Callback function type for handling program upload start events
+ * @return true to allow upload to proceed, false to abort upload
+ */
+typedef bool (*program_upload_start_callback_t)(void);
+
+/**
  * @brief Initialize the HTTP service module
  *        This registers event handlers and loads configuration
+ * @param on_upload_start Callback called when program upload starts (can be NULL)
  * @return true on success, false on failure
  */
-bool http_service_init(void);
+bool http_service_init(program_upload_start_callback_t on_upload_start);
 
 /**
  * @brief Get the HTTP service port

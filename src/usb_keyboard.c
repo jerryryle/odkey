@@ -12,7 +12,7 @@ static const char *TAG = "usb_keyboard";
 
 // Queue and task configuration
 #define KEYBOARD_QUEUE_DEPTH 10
-#define KEYBOARD_TASK_STACK_SIZE configMINIMAL_STACK_SIZE
+#define KEYBOARD_TASK_STACK_SIZE 4096
 #define KEYBOARD_TASK_PRIORITY 6
 
 // Queue item structure

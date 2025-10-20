@@ -9,9 +9,10 @@ compilation, disassembly, and USB upload.
 import argparse
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Union
 
-from .config.odkey_config import ODKeyConfig, ODKeyUploadError
+from .config.odkey_config_http import ODKeyConfigHttp
+from .config.odkey_config_usb import ODKeyConfigUsb, ODKeyUploadError
 from .odkeyscript.odkeyscript_compiler import CompileError, Compiler
 from .odkeyscript.odkeyscript_disassembler import disassemble
 
@@ -95,13 +96,18 @@ def upload_command(args: Any) -> int:
         print(f"Maximum size: {max_size} bytes")
         return 1
 
-    # Upload to device
-    config = ODKeyConfig(args.device_path)
-    config.usb_vid = args.vid
-    config.usb_pid = args.pid
+    # Select interface and upload to device
+    if args.interface == "wifi":
+        config: Union[ODKeyConfigUsb, ODKeyConfigHttp] = ODKeyConfigHttp(
+            args.host, args.port, args.api_key
+        )
+    else:  # usb
+        config = ODKeyConfigUsb(args.device_path)
+        config.usb_vid = args.vid
+        config.usb_pid = args.pid
 
     try:
-        if not config.find_device():
+        if args.interface == "usb" and not config.find_device():
             return 1
 
         if not config.upload_program(program_data):
@@ -119,18 +125,25 @@ def upload_command(args: Any) -> int:
 
 def download_command(args: Any) -> int:
     """Handle the download command"""
-    # Connect to device
-    config = ODKeyConfig(args.device_path)
-    config.usb_vid = args.vid
-    config.usb_pid = args.pid
+    # Select interface and connect to device
+    if args.interface == "wifi":
+        config: Union[ODKeyConfigUsb, ODKeyConfigHttp] = ODKeyConfigHttp(
+            args.host, args.port, args.api_key
+        )
+    else:  # usb
+        config = ODKeyConfigUsb(args.device_path)
+        config.usb_vid = args.vid
+        config.usb_pid = args.pid
 
     try:
-        if not config.find_device():
+        if args.interface == "usb" and not config.find_device():
             return 1
 
         # Download program
         try:
             program_data = config.download_program()
+            if program_data is None:
+                return 1
         except ODKeyUploadError as e:
             print(f"Download failed: {e}")
             return 1
@@ -168,24 +181,29 @@ def download_command(args: Any) -> int:
 
 def nvs_set_command(args: Any) -> int:
     """Handle the nvs-set command"""
-    # Connect to device
-    config = ODKeyConfig(args.device_path)
-    config.usb_vid = args.vid
-    config.usb_pid = args.pid
+    # Select interface and connect to device
+    if args.interface == "wifi":
+        config: Union[ODKeyConfigUsb, ODKeyConfigHttp] = ODKeyConfigHttp(
+            args.host, args.port, args.api_key
+        )
+    else:  # usb
+        config = ODKeyConfigUsb(args.device_path)
+        config.usb_vid = args.vid
+        config.usb_pid = args.pid
 
     try:
-        if not config.find_device():
+        if args.interface == "usb" and not config.find_device():
             return 1
 
         # Parse value based on type
         if args.type == "string":
             # Default type, use value as string
-            config.nvs_set_str(args.key, args.value)
+            success = config.nvs_set(args.key, args.type, args.value)
         elif args.type in ["u8", "i8", "u16", "i16", "u32", "i32", "u64", "i64"]:
             # Integer type
             try:
                 int_value = int(args.value)
-                config.nvs_set_int(args.key, int_value, args.type)
+                success = config.nvs_set(args.key, args.type, int_value)
             except ValueError:
                 print(f"Error: '{args.value}' is not a valid integer")
                 return 1
@@ -196,7 +214,7 @@ def nvs_set_command(args: Any) -> int:
                 try:
                     with open(args.file, "rb") as f:
                         blob_data = f.read()
-                    config.nvs_set_blob(args.key, blob_data)
+                    success = config.nvs_set(args.key, args.type, blob_data)
                 except Exception as e:
                     print(f"Error reading file: {e}")
                     return 1
@@ -204,12 +222,16 @@ def nvs_set_command(args: Any) -> int:
                 # Interpret value as hex
                 try:
                     blob_data = bytes.fromhex(args.value)
-                    config.nvs_set_blob(args.key, blob_data)
+                    success = config.nvs_set(args.key, args.type, blob_data)
                 except ValueError:
                     print(f"Error: '{args.value}' is not valid hex data")
                     return 1
         else:
             print(f"Error: Invalid type '{args.type}'")
+            return 1
+
+        if not success:
+            print("Failed to set NVS value")
             return 1
 
         return 0
@@ -223,18 +245,25 @@ def nvs_set_command(args: Any) -> int:
 
 def nvs_get_command(args: Any) -> int:
     """Handle the nvs-get command"""
-    # Connect to device
-    config = ODKeyConfig(args.device_path)
-    config.usb_vid = args.vid
-    config.usb_pid = args.pid
+    # Select interface and connect to device
+    if args.interface == "wifi":
+        config: Union[ODKeyConfigUsb, ODKeyConfigHttp] = ODKeyConfigHttp(
+            args.host, args.port, args.api_key
+        )
+    else:  # usb
+        config = ODKeyConfigUsb(args.device_path)
+        config.usb_vid = args.vid
+        config.usb_pid = args.pid
 
     try:
-        if not config.find_device():
+        if args.interface == "usb" and not config.find_device():
             return 1
 
         # Get value
         try:
-            type_name, value = config.nvs_get(args.key)
+            success, type_name, value = config.nvs_get(args.key)
+            if not success:
+                return 1
         except ODKeyUploadError as e:
             print(f"NVS get failed: {e}")
             return 1
@@ -273,18 +302,25 @@ def nvs_get_command(args: Any) -> int:
 
 def nvs_delete_command(args: Any) -> int:
     """Handle the nvs-delete command"""
-    # Connect to device
-    config = ODKeyConfig(args.device_path)
-    config.usb_vid = args.vid
-    config.usb_pid = args.pid
+    # Select interface and connect to device
+    if args.interface == "wifi":
+        config: Union[ODKeyConfigUsb, ODKeyConfigHttp] = ODKeyConfigHttp(
+            args.host, args.port, args.api_key
+        )
+    else:  # usb
+        config = ODKeyConfigUsb(args.device_path)
+        config.usb_vid = args.vid
+        config.usb_pid = args.pid
 
     try:
-        if not config.find_device():
+        if args.interface == "usb" and not config.find_device():
             return 1
 
         # Delete key
         try:
-            config.nvs_delete(args.key)
+            success = config.nvs_delete(args.key)
+            if not success:
+                return 1
         except ODKeyUploadError as e:
             print(f"NVS delete failed: {e}")
             return 1
@@ -380,6 +416,27 @@ Examples:
     )
     upload_parser.add_argument("--device-path", help="Specific HID device path to use")
     upload_parser.add_argument(
+        "--interface",
+        "-i",
+        choices=["usb", "wifi"],
+        default="usb",
+        help="Communication interface (default: usb)",
+    )
+    upload_parser.add_argument(
+        "--host",
+        default="odkey.local",
+        help="Device hostname or IP address (default: odkey.local, for wifi interface)",
+    )
+    upload_parser.add_argument(
+        "--port",
+        type=int,
+        default=80,
+        help="HTTP port (default: 80, for wifi interface)",
+    )
+    upload_parser.add_argument(
+        "--api-key", help="API key for authentication (for wifi interface)"
+    )
+    upload_parser.add_argument(
         "--verbose", "-v", action="store_true", help="Enable verbose output"
     )
 
@@ -410,6 +467,27 @@ Examples:
     )
     download_parser.add_argument(
         "--device-path", help="Specific HID device path to use"
+    )
+    download_parser.add_argument(
+        "--interface",
+        "-i",
+        choices=["usb", "wifi"],
+        default="usb",
+        help="Communication interface (default: usb)",
+    )
+    download_parser.add_argument(
+        "--host",
+        default="odkey.local",
+        help="Device hostname or IP address (default: odkey.local, for wifi interface)",
+    )
+    download_parser.add_argument(
+        "--port",
+        type=int,
+        default=80,
+        help="HTTP port (default: 80, for wifi interface)",
+    )
+    download_parser.add_argument(
+        "--api-key", help="API key for authentication (for wifi interface)"
     )
 
     # NVS set command
@@ -449,6 +527,27 @@ Examples:
         help="USB Product ID (default: 0x4008)",
     )
     nvs_set_parser.add_argument("--device-path", help="Specific HID device path to use")
+    nvs_set_parser.add_argument(
+        "--interface",
+        "-i",
+        choices=["usb", "wifi"],
+        default="usb",
+        help="Communication interface (default: usb)",
+    )
+    nvs_set_parser.add_argument(
+        "--host",
+        default="odkey.local",
+        help="Device hostname or IP address (default: odkey.local, for wifi interface)",
+    )
+    nvs_set_parser.add_argument(
+        "--port",
+        type=int,
+        default=80,
+        help="HTTP port (default: 80, for wifi interface)",
+    )
+    nvs_set_parser.add_argument(
+        "--api-key", help="API key for authentication (for wifi interface)"
+    )
 
     # NVS get command
     nvs_get_parser = subparsers.add_parser(
@@ -469,6 +568,27 @@ Examples:
         help="USB Product ID (default: 0x4008)",
     )
     nvs_get_parser.add_argument("--device-path", help="Specific HID device path to use")
+    nvs_get_parser.add_argument(
+        "--interface",
+        "-i",
+        choices=["usb", "wifi"],
+        default="usb",
+        help="Communication interface (default: usb)",
+    )
+    nvs_get_parser.add_argument(
+        "--host",
+        default="odkey.local",
+        help="Device hostname or IP address (default: odkey.local, for wifi interface)",
+    )
+    nvs_get_parser.add_argument(
+        "--port",
+        type=int,
+        default=80,
+        help="HTTP port (default: 80, for wifi interface)",
+    )
+    nvs_get_parser.add_argument(
+        "--api-key", help="API key for authentication (for wifi interface)"
+    )
 
     # NVS delete command
     nvs_delete_parser = subparsers.add_parser(
@@ -489,6 +609,27 @@ Examples:
     )
     nvs_delete_parser.add_argument(
         "--device-path", help="Specific HID device path to use"
+    )
+    nvs_delete_parser.add_argument(
+        "--interface",
+        "-i",
+        choices=["usb", "wifi"],
+        default="usb",
+        help="Communication interface (default: usb)",
+    )
+    nvs_delete_parser.add_argument(
+        "--host",
+        default="odkey.local",
+        help="Device hostname or IP address (default: odkey.local, for wifi interface)",
+    )
+    nvs_delete_parser.add_argument(
+        "--port",
+        type=int,
+        default=80,
+        help="HTTP port (default: 80, for wifi interface)",
+    )
+    nvs_delete_parser.add_argument(
+        "--api-key", help="API key for authentication (for wifi interface)"
     )
 
     # List devices command

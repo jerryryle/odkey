@@ -20,7 +20,7 @@ typedef enum {
 // Program start request structure
 typedef struct {
     const uint8_t *program;
-    size_t program_size;
+    uint32_t program_size;
 } vm_program_request_t;
 
 // Global state
@@ -166,7 +166,7 @@ bool vm_task_init(vm_hid_send_callback_t hid_send_callback) {
     return true;
 }
 
-bool vm_task_start_program(const uint8_t *program, size_t program_size) {
+bool vm_task_start_program(const uint8_t *program, uint32_t program_size) {
     if (g_vm_task_handle == NULL) {
         ESP_LOGE(TAG, "VM task not initialized");
         return false;
