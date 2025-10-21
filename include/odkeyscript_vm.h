@@ -85,7 +85,11 @@ bool vm_init(vm_context_t *ctx);
  * @param delay_callback Function to call for delays
  * @return VM error code
  */
-vm_error_t vm_start(vm_context_t *ctx, const uint8_t *program, uint32_t program_size, vm_hid_callback_t hid_callback, vm_delay_callback_t delay_callback);
+vm_error_t vm_start(vm_context_t *ctx,
+                    const uint8_t *program,
+                    uint32_t program_size,
+                    vm_hid_callback_t hid_callback,
+                    vm_delay_callback_t delay_callback);
 
 /**
  * @brief Execute the next opcode in the program
@@ -129,7 +133,10 @@ bool vm_has_error(const vm_context_t *ctx);
  * @param keys_pressed Output: number of keys pressed
  * @param keys_released Output: number of keys released
  */
-void vm_get_stats(const vm_context_t *ctx, uint32_t *instructions_executed, uint32_t *keys_pressed, uint32_t *keys_released);
+void vm_get_stats(const vm_context_t *ctx,
+                  uint32_t *instructions_executed,
+                  uint32_t *keys_pressed,
+                  uint32_t *keys_released);
 
 /**
  * @brief Reset VM context to initial state

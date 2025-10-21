@@ -18,7 +18,10 @@ static const char *TAG = "odkeyscript_vm";
 #define OPCODE_JNZ 0x16
 
 // Helper function to send HID report using callback
-static bool vm_send_hid_report(vm_context_t *ctx, uint8_t modifier, const uint8_t *keys, uint8_t count) {
+static bool vm_send_hid_report(vm_context_t *ctx,
+                               uint8_t modifier,
+                               const uint8_t *keys,
+                               uint8_t count) {
     if (ctx->hid_callback) {
         return ctx->hid_callback(modifier, keys, count);
     }
@@ -46,7 +49,8 @@ static bool vm_read_u16(vm_context_t *ctx, uint16_t *value) {
     if (ctx->pc + 1 >= ctx->program_size) {
         return false;
     }
-    *value = (uint16_t)ctx->program[ctx->pc] | ((uint16_t)ctx->program[ctx->pc + 1] << 8);
+    *value =
+        (uint16_t)ctx->program[ctx->pc] | ((uint16_t)ctx->program[ctx->pc + 1] << 8);
     ctx->pc += 2;
     return true;
 }
@@ -82,7 +86,10 @@ static void vm_clear_zero_flag(vm_context_t *ctx) {
 // Helper function to release all currently pressed keys
 static void vm_release_all_keys(vm_context_t *ctx) {
     if (ctx->current_key_count > 0 || ctx->current_modifier != 0) {
-        ESP_LOGD(TAG, "Releasing all keys (modifier: 0x%02X, keys: %d)", ctx->current_modifier, ctx->current_key_count);
+        ESP_LOGD(TAG,
+                 "Releasing all keys (modifier: 0x%02X, keys: %d)",
+                 ctx->current_modifier,
+                 ctx->current_key_count);
 
         vm_send_hid_report(ctx, 0, NULL, 0);
         ctx->current_modifier = 0;
@@ -131,8 +138,13 @@ void vm_reset(vm_context_t *ctx) {
     ESP_LOGD(TAG, "VM reset");
 }
 
-vm_error_t vm_start(vm_context_t *ctx, const uint8_t *program, uint32_t program_size, vm_hid_callback_t hid_callback, vm_delay_callback_t delay_callback) {
-    if (ctx == NULL || program == NULL || program_size == 0 || hid_callback == NULL || delay_callback == NULL) {
+vm_error_t vm_start(vm_context_t *ctx,
+                    const uint8_t *program,
+                    uint32_t program_size,
+                    vm_hid_callback_t hid_callback,
+                    vm_delay_callback_t delay_callback) {
+    if (ctx == NULL || program == NULL || program_size == 0 || hid_callback == NULL ||
+        delay_callback == NULL) {
         return VM_ERROR_INVALID_PROGRAM;
     }
 
@@ -145,7 +157,9 @@ vm_error_t vm_start(vm_context_t *ctx, const uint8_t *program, uint32_t program_
     ctx->hid_callback = hid_callback;
     ctx->delay_callback = delay_callback;
 
-    ESP_LOGI(TAG, "Starting VM execution (program size: %lu bytes)", (unsigned long)program_size);
+    ESP_LOGI(TAG,
+             "Starting VM execution (program size: %lu bytes)",
+             (unsigned long)program_size);
     return VM_ERROR_NONE;
 }
 
@@ -167,7 +181,8 @@ vm_error_t vm_step(vm_context_t *ctx) {
     ctx->pc++;
     ctx->instructions_executed++;
 
-    ESP_LOGD(TAG, "Executing opcode 0x%02X at PC %lu", opcode, (unsigned long)(ctx->pc - 1));
+    ESP_LOGD(
+        TAG, "Executing opcode 0x%02X at PC %lu", opcode, (unsigned long)(ctx->pc - 1));
 
     switch (opcode) {
     case OPCODE_KEYDN: {
@@ -202,7 +217,10 @@ vm_error_t vm_step(vm_context_t *ctx) {
         }
 
         // Send HID report
-        if (!vm_send_hid_report(ctx, ctx->current_modifier, ctx->current_keys, ctx->current_key_count)) {
+        if (!vm_send_hid_report(ctx,
+                                ctx->current_modifier,
+                                ctx->current_keys,
+                                ctx->current_key_count)) {
             ctx->error = VM_ERROR_HID_ERROR;
             ctx->state = VM_STATE_ERROR;
             break;
@@ -265,7 +283,10 @@ vm_error_t vm_step(vm_context_t *ctx) {
         memcpy(ctx->current_keys, new_keys, new_key_count);
 
         // Send HID report with updated state
-        if (!vm_send_hid_report(ctx, ctx->current_modifier, ctx->current_keys, ctx->current_key_count)) {
+        if (!vm_send_hid_report(ctx,
+                                ctx->current_modifier,
+                                ctx->current_keys,
+                                ctx->current_key_count)) {
             ctx->error = VM_ERROR_HID_ERROR;
             ctx->state = VM_STATE_ERROR;
             break;
@@ -341,9 +362,14 @@ vm_error_t vm_step(vm_context_t *ctx) {
         if (ctx->counters[counter_id] > 0) {
             ctx->counters[counter_id]--;
         }
-        ctx->zero_flag = (ctx->counters[counter_id] == 0);  // Set flag if decrement resulted in zero
+        ctx->zero_flag =
+            (ctx->counters[counter_id] == 0);  // Set flag if decrement resulted in zero
 
-        ESP_LOGD(TAG, "DEC: counter[%d] = %d, zero_flag = %s", counter_id, ctx->counters[counter_id], ctx->zero_flag ? "true" : "false");
+        ESP_LOGD(TAG,
+                 "DEC: counter[%d] = %d, zero_flag = %s",
+                 counter_id,
+                 ctx->counters[counter_id],
+                 ctx->zero_flag ? "true" : "false");
         break;
     }
 
@@ -373,7 +399,10 @@ vm_error_t vm_step(vm_context_t *ctx) {
     }
 
     default: {
-        ESP_LOGE(TAG, "Invalid opcode: 0x%02X at PC %lu", opcode, (unsigned long)(ctx->pc - 1));
+        ESP_LOGE(TAG,
+                 "Invalid opcode: 0x%02X at PC %lu",
+                 opcode,
+                 (unsigned long)(ctx->pc - 1));
         ctx->error = VM_ERROR_INVALID_OPCODE;
         ctx->state = VM_STATE_ERROR;
         break;
@@ -433,7 +462,10 @@ bool vm_has_error(const vm_context_t *ctx) {
     return ctx != NULL && ctx->state == VM_STATE_ERROR;
 }
 
-void vm_get_stats(const vm_context_t *ctx, uint32_t *instructions_executed, uint32_t *keys_pressed, uint32_t *keys_released) {
+void vm_get_stats(const vm_context_t *ctx,
+                  uint32_t *instructions_executed,
+                  uint32_t *keys_pressed,
+                  uint32_t *keys_released) {
     if (ctx == NULL) {
         return;
     }

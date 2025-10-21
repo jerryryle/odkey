@@ -12,10 +12,7 @@ static const char *TAG = "vm_task";
 #define VM_TASK_PRIORITY 5
 
 // VM task state
-typedef enum {
-    VM_TASK_STATE_IDLE,
-    VM_TASK_STATE_RUNNING
-} vm_task_state_t;
+typedef enum { VM_TASK_STATE_IDLE, VM_TASK_STATE_RUNNING } vm_task_state_t;
 
 // Program start request structure
 typedef struct {
@@ -40,12 +37,12 @@ static vm_context_t g_vm_context;
 // Delay callback for VM - interruptible by halt request
 static void delay_callback(uint16_t ms) {
     // Wait for either the delay time or a halt signal
-    EventBits_t bits = xEventGroupWaitBits(
-        g_halt_event_group,
-        HALT_BIT,
-        pdFALSE,  // Don't clear the bit when we get it
-        pdFALSE,  // Wait for any bit (not all bits)
-        pdMS_TO_TICKS(ms));
+    EventBits_t bits =
+        xEventGroupWaitBits(g_halt_event_group,
+                            HALT_BIT,
+                            pdFALSE,  // Don't clear the bit when we get it
+                            pdFALSE,  // Wait for any bit (not all bits)
+                            pdMS_TO_TICKS(ms));
 
     // If we got the halt bit, we were interrupted
     if (bits & HALT_BIT) {
@@ -86,10 +83,16 @@ static void vm_task_function(void *pvParameters) {
         xEventGroupClearBits(g_halt_event_group, HALT_BIT);
         set_task_state(VM_TASK_STATE_RUNNING);
 
-        ESP_LOGI(TAG, "Starting program execution (%lu bytes)", (unsigned long)request.program_size);
+        ESP_LOGI(TAG,
+                 "Starting program execution (%lu bytes)",
+                 (unsigned long)request.program_size);
 
         // Start VM
-        if (vm_start(&g_vm_context, request.program, request.program_size, g_hid_send_callback, delay_callback) == VM_ERROR_NONE) {
+        if (vm_start(&g_vm_context,
+                     request.program,
+                     request.program_size,
+                     g_hid_send_callback,
+                     delay_callback) == VM_ERROR_NONE) {
             // Run VM step by step
             vm_error_t result = VM_ERROR_NONE;
             while (vm_running(&g_vm_context) && !halt_requested()) {
@@ -105,8 +108,14 @@ static void vm_task_function(void *pvParameters) {
             } else {
                 ESP_LOGI(TAG, "Program completed successfully");
                 uint32_t instructions, keys_pressed, keys_released;
-                vm_get_stats(&g_vm_context, &instructions, &keys_pressed, &keys_released);
-                ESP_LOGI(TAG, "VM Stats - Instructions: %lu, Keys Pressed: %lu, Keys Released: %lu", instructions, keys_pressed, keys_released);
+                vm_get_stats(
+                    &g_vm_context, &instructions, &keys_pressed, &keys_released);
+                ESP_LOGI(TAG,
+                         "VM Stats - Instructions: %lu, Keys Pressed: %lu, Keys "
+                         "Released: %lu",
+                         instructions,
+                         keys_pressed,
+                         keys_released);
             }
         } else {
             ESP_LOGE(TAG, "Failed to start VM");
@@ -153,7 +162,12 @@ bool vm_task_init(vm_hid_send_callback_t hid_send_callback) {
     }
 
     // Create VM task
-    BaseType_t ret = xTaskCreate(vm_task_function, "vm_task", VM_TASK_STACK_SIZE, NULL, VM_TASK_PRIORITY, &g_vm_task_handle);
+    BaseType_t ret = xTaskCreate(vm_task_function,
+                                 "vm_task",
+                                 VM_TASK_STACK_SIZE,
+                                 NULL,
+                                 VM_TASK_PRIORITY,
+                                 &g_vm_task_handle);
     if (ret != pdPASS) {
         ESP_LOGE(TAG, "Failed to create VM task");
         vQueueDelete(g_program_queue);
@@ -184,9 +198,7 @@ bool vm_task_start_program(const uint8_t *program, uint32_t program_size) {
     }
 
     // Prepare request
-    vm_program_request_t request = {
-        .program = program,
-        .program_size = program_size};
+    vm_program_request_t request = {.program = program, .program_size = program_size};
 
     // Send request to queue (non-blocking)
     BaseType_t ret = xQueueSend(g_program_queue, &request, 0);

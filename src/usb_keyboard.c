@@ -43,7 +43,10 @@ static void keyboard_task(void *pvParameters) {
 
             // Send the HID keyboard report
             tud_hid_n_keyboard_report(g_interface_num, 0, report.modifier, report.keys);
-            ESP_LOGD(TAG, "Sent keyboard report: modifier=0x%02X, keys=%d", report.modifier, report.count);
+            ESP_LOGD(TAG,
+                     "Sent keyboard report: modifier=0x%02X, keys=%d",
+                     report.modifier,
+                     report.count);
         }
     }
 }
@@ -61,7 +64,12 @@ bool usb_keyboard_init(uint8_t interface_num) {
     }
 
     // Create the keyboard task
-    BaseType_t ret = xTaskCreate(keyboard_task, "keyboard_task", KEYBOARD_TASK_STACK_SIZE, NULL, KEYBOARD_TASK_PRIORITY, &g_keyboard_task_handle);
+    BaseType_t ret = xTaskCreate(keyboard_task,
+                                 "keyboard_task",
+                                 KEYBOARD_TASK_STACK_SIZE,
+                                 NULL,
+                                 KEYBOARD_TASK_PRIORITY,
+                                 &g_keyboard_task_handle);
     if (ret != pdPASS) {
         ESP_LOGE(TAG, "Failed to create keyboard task");
         vQueueDelete(g_keyboard_queue);

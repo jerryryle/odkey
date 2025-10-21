@@ -16,7 +16,9 @@ extern "C" {
  * @param count Number of keycodes in the array (0-6, more than 6 will be truncated)
  * @return true on success, false on failure
  */
-typedef bool (*vm_hid_send_callback_t)(uint8_t modifier, const uint8_t *keys, uint8_t count);
+typedef bool (*vm_hid_send_callback_t)(uint8_t modifier,
+                                       const uint8_t *keys,
+                                       uint8_t count);
 
 /**
  * @brief Initialize the VM task module

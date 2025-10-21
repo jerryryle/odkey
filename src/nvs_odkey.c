@@ -18,7 +18,10 @@ bool nvs_odkey_init(void) {
     nvs_handle_t nvs_handle;
     ret = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs_handle);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to open NVS namespace '%s': %s", NVS_NAMESPACE, esp_err_to_name(ret));
+        ESP_LOGE(TAG,
+                 "Failed to open NVS namespace '%s': %s",
+                 NVS_NAMESPACE,
+                 esp_err_to_name(ret));
         return false;
     }
 

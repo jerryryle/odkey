@@ -46,7 +46,9 @@ static void debounce_timer_callback(TimerHandle_t xTimer) {
     g_button_state.interrupt_enabled = true;
 }
 
-bool button_handler_init(uint8_t gpio_pin, uint32_t debounce_ms, button_callback_t callback) {
+bool button_handler_init(uint8_t gpio_pin,
+                         uint32_t debounce_ms,
+                         button_callback_t callback) {
     if (callback == NULL) {
         ESP_LOGE(TAG, "Callback cannot be NULL");
         return false;
@@ -74,7 +76,8 @@ bool button_handler_init(uint8_t gpio_pin, uint32_t debounce_ms, button_callback
 
     esp_err_t ret = gpio_config(&io_conf);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to configure GPIO %d: %s", gpio_pin, esp_err_to_name(ret));
+        ESP_LOGE(
+            TAG, "Failed to configure GPIO %d: %s", gpio_pin, esp_err_to_name(ret));
         return false;
     }
 
@@ -110,7 +113,10 @@ bool button_handler_init(uint8_t gpio_pin, uint32_t debounce_ms, button_callback
     gpio_intr_enable(gpio_pin);
     g_button_state.interrupt_enabled = true;
 
-    ESP_LOGI(TAG, "Button handler initialized on GPIO %d with %lu ms debounce", gpio_pin, (unsigned long)debounce_ms);
+    ESP_LOGI(TAG,
+             "Button handler initialized on GPIO %d with %lu ms debounce",
+             gpio_pin,
+             (unsigned long)debounce_ms);
 
     return true;
 }

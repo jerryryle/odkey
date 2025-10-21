@@ -37,8 +37,7 @@ typedef enum {
     TRANSFER_STATE_ERROR
 } transfer_state_t;
 
-static struct
-{
+static struct {
     transfer_state_t state;
     size_t total_program_size;
     size_t program_bytes_read;
@@ -58,11 +57,14 @@ static struct
 
 // Helper function to reset NVS transfer buffer
 static void reset_nvs_transfer_buffer(void) {
-    memset(g_transfer_state.nvs_transfer_buffer, 0, sizeof(g_transfer_state.nvs_transfer_buffer));
+    memset(g_transfer_state.nvs_transfer_buffer,
+           0,
+           sizeof(g_transfer_state.nvs_transfer_buffer));
     g_transfer_state.nvs_transfer_buffer_transferred = 0;
 }
 
-bool usb_system_config_init(uint8_t interface_num, program_upload_start_callback_t on_upload_start) {
+bool usb_system_config_init(uint8_t interface_num,
+                            program_upload_start_callback_t on_upload_start) {
     // Reset transfer state
     g_transfer_state.state = TRANSFER_STATE_IDLE;
     g_transfer_state.total_program_size = 0;
@@ -79,15 +81,14 @@ bool usb_system_config_init(uint8_t interface_num, program_upload_start_callback
     // Reset NVS transfer buffer
     reset_nvs_transfer_buffer();
 
-    ESP_LOGI(TAG, "System configuration module initialized on interface %d", interface_num);
+    ESP_LOGI(
+        TAG, "System configuration module initialized on interface %d", interface_num);
     return true;
 }
 
 // Helper function to extract 32-bit value from data
 static uint32_t extract_u32(const uint8_t *data) {
-    return (uint32_t)data[0] |
-           ((uint32_t)data[1] << 8) |
-           ((uint32_t)data[2] << 16) |
+    return (uint32_t)data[0] | ((uint32_t)data[1] << 8) | ((uint32_t)data[2] << 16) |
            ((uint32_t)data[3] << 24);
 }
 
@@ -100,12 +101,15 @@ static void send_response(uint8_t response_id) {
     // Send response packet (64 bytes with command code in first byte)
     uint8_t response_data[64] = {0};
     response_data[0] = response_id;
-    tud_hid_n_report(g_transfer_state.interface_num, 0, response_data, sizeof(response_data));
+    tud_hid_n_report(
+        g_transfer_state.interface_num, 0, response_data, sizeof(response_data));
 
     ESP_LOGD(TAG, "Sent response: 0x%02X", response_id);
 }
 
-static void send_response_with_data(uint8_t response_id, const uint8_t *data, size_t data_len) {
+static void send_response_with_data(uint8_t response_id,
+                                    const uint8_t *data,
+                                    size_t data_len) {
     if (!tud_hid_ready()) {
         ESP_LOGW(TAG, "HID not ready for response");
         return;
@@ -121,9 +125,13 @@ static void send_response_with_data(uint8_t response_id, const uint8_t *data, si
         memcpy(&response_data[4], data, copy_len);
     }
 
-    tud_hid_n_report(g_transfer_state.interface_num, 0, response_data, sizeof(response_data));
+    tud_hid_n_report(
+        g_transfer_state.interface_num, 0, response_data, sizeof(response_data));
 
-    ESP_LOGD(TAG, "Sent response: 0x%02X with %lu bytes data", response_id, (unsigned long)copy_len);
+    ESP_LOGD(TAG,
+             "Sent response: 0x%02X with %lu bytes data",
+             response_id,
+             (unsigned long)copy_len);
 }
 
 // Handle CMD_PROGRAM_WRITE_START command
@@ -153,7 +161,8 @@ static void handle_program_write_start(uint32_t program_size) {
 
     g_transfer_state.state = TRANSFER_STATE_WRITING;
 
-    ESP_LOGI(TAG, "Write session started, program: %lu bytes", (unsigned long)program_size);
+    ESP_LOGI(
+        TAG, "Write session started, program: %lu bytes", (unsigned long)program_size);
     send_response(RESP_OK);
 }
 
@@ -166,7 +175,8 @@ static void handle_program_write_chunk(const uint8_t *chunk_data, uint16_t chunk
     }
 
     if (chunk_size != 60) {
-        ESP_LOGE(TAG, "PROGRAM_WRITE_CHUNK must be exactly 60 bytes, got %d", chunk_size);
+        ESP_LOGE(
+            TAG, "PROGRAM_WRITE_CHUNK must be exactly 60 bytes, got %d", chunk_size);
         g_transfer_state.state = TRANSFER_STATE_ERROR;
         send_response(RESP_ERROR);
         return;
@@ -176,17 +186,22 @@ static void handle_program_write_chunk(const uint8_t *chunk_data, uint16_t chunk
     size_t expected_size = program_storage_get_expected_size();
     size_t bytes_written = program_storage_get_bytes_written();
     size_t program_bytes_remaining = expected_size - bytes_written;
-    size_t actual_chunk_size = (program_bytes_remaining < chunk_size) ? program_bytes_remaining : chunk_size;
+    size_t actual_chunk_size =
+        (program_bytes_remaining < chunk_size) ? program_bytes_remaining : chunk_size;
 
     // Write chunk to program storage
-    if (!program_storage_write_chunk(chunk_data, actual_chunk_size, PROGRAM_STORAGE_SOURCE_USB)) {
+    if (!program_storage_write_chunk(
+            chunk_data, actual_chunk_size, PROGRAM_STORAGE_SOURCE_USB)) {
         ESP_LOGE(TAG, "Failed to write chunk to program storage");
         g_transfer_state.state = TRANSFER_STATE_ERROR;
         send_response(RESP_ERROR);
         return;
     }
 
-    ESP_LOGD(TAG, "Buffered chunk: %lu/%lu bytes (program)", (unsigned long)program_storage_get_bytes_written(), (unsigned long)expected_size);
+    ESP_LOGD(TAG,
+             "Buffered chunk: %lu/%lu bytes (program)",
+             (unsigned long)program_storage_get_bytes_written(),
+             (unsigned long)expected_size);
 
     send_response(RESP_OK);
 }
@@ -212,7 +227,9 @@ static void handle_program_write_finish(uint32_t program_size) {
         return;
     }
 
-    ESP_LOGI(TAG, "Write session completed successfully: %lu bytes", (unsigned long)program_size);
+    ESP_LOGI(TAG,
+             "Write session completed successfully: %lu bytes",
+             (unsigned long)program_size);
 
     g_transfer_state.state = TRANSFER_STATE_IDLE;
 
@@ -237,7 +254,8 @@ static void handle_program_read_start(void) {
     g_transfer_state.program_bytes_read = 0;
     g_transfer_state.program_data = program_data;
 
-    ESP_LOGI(TAG, "Read session started, program: %lu bytes", (unsigned long)program_size);
+    ESP_LOGI(
+        TAG, "Read session started, program: %lu bytes", (unsigned long)program_size);
 
     // Send response with program size in bytes 4-7
     uint8_t size_data[4];
@@ -265,11 +283,13 @@ static void handle_program_read_chunk(void) {
     }
 
     // Calculate how many bytes to send (max 60)
-    size_t bytes_remaining = g_transfer_state.total_program_size - g_transfer_state.program_bytes_read;
+    size_t bytes_remaining =
+        g_transfer_state.total_program_size - g_transfer_state.program_bytes_read;
     size_t chunk_size = (bytes_remaining > 60) ? 60 : bytes_remaining;
 
     // Get chunk data
-    const uint8_t *chunk_data = g_transfer_state.program_data + g_transfer_state.program_bytes_read;
+    const uint8_t *chunk_data =
+        g_transfer_state.program_data + g_transfer_state.program_bytes_read;
 
     // Pad chunk to 60 bytes if needed
     uint8_t padded_chunk[60] = {0};
@@ -278,14 +298,19 @@ static void handle_program_read_chunk(void) {
     // Update read position
     g_transfer_state.program_bytes_read += chunk_size;
 
-    ESP_LOGD(TAG, "Read chunk: %lu/%lu bytes", (unsigned long)g_transfer_state.program_bytes_read, (unsigned long)g_transfer_state.total_program_size);
+    ESP_LOGD(TAG,
+             "Read chunk: %lu/%lu bytes",
+             (unsigned long)g_transfer_state.program_bytes_read,
+             (unsigned long)g_transfer_state.total_program_size);
 
     // Send chunk data
     send_response_with_data(RESP_OK, padded_chunk, 60);
 
     // If we've read all data, reset state
     if (g_transfer_state.program_bytes_read >= g_transfer_state.total_program_size) {
-        ESP_LOGI(TAG, "Read session completed successfully: %lu bytes", (unsigned long)g_transfer_state.total_program_size);
+        ESP_LOGI(TAG,
+                 "Read session completed successfully: %lu bytes",
+                 (unsigned long)g_transfer_state.total_program_size);
         g_transfer_state.state = TRANSFER_STATE_IDLE;
         g_transfer_state.total_program_size = 0;
         g_transfer_state.program_bytes_read = 0;
@@ -324,7 +349,8 @@ static void handle_nvs_set_start(const uint8_t *data) {
     case NVS_TYPE_U16:
     case NVS_TYPE_I16:
         if (value_length != 2) {
-            ESP_LOGE(TAG, "Invalid length for u16/i16: %lu", (unsigned long)value_length);
+            ESP_LOGE(
+                TAG, "Invalid length for u16/i16: %lu", (unsigned long)value_length);
             send_response(RESP_ERROR);
             return;
         }
@@ -332,7 +358,8 @@ static void handle_nvs_set_start(const uint8_t *data) {
     case NVS_TYPE_U32:
     case NVS_TYPE_I32:
         if (value_length != 4) {
-            ESP_LOGE(TAG, "Invalid length for u32/i32: %lu", (unsigned long)value_length);
+            ESP_LOGE(
+                TAG, "Invalid length for u32/i32: %lu", (unsigned long)value_length);
             send_response(RESP_ERROR);
             return;
         }
@@ -340,7 +367,8 @@ static void handle_nvs_set_start(const uint8_t *data) {
     case NVS_TYPE_U64:
     case NVS_TYPE_I64:
         if (value_length != 8) {
-            ESP_LOGE(TAG, "Invalid length for u64/i64: %lu", (unsigned long)value_length);
+            ESP_LOGE(
+                TAG, "Invalid length for u64/i64: %lu", (unsigned long)value_length);
             send_response(RESP_ERROR);
             return;
         }
@@ -367,7 +395,11 @@ static void handle_nvs_set_start(const uint8_t *data) {
     // Reset NVS transfer buffer for new operation
     reset_nvs_transfer_buffer();
 
-    ESP_LOGI(TAG, "NVS set started: key='%s', type=0x%02X, length=%lu", g_transfer_state.nvs_key, value_type, (unsigned long)value_length);
+    ESP_LOGI(TAG,
+             "NVS set started: key='%s', type=0x%02X, length=%lu",
+             g_transfer_state.nvs_key,
+             value_type,
+             (unsigned long)value_length);
 
     send_response(RESP_OK);
 }
@@ -381,25 +413,32 @@ static void handle_nvs_set_data(const uint8_t *data) {
     }
 
     // Calculate how many bytes to copy (60 bytes max)
-    size_t bytes_remaining = g_transfer_state.nvs_value_length - g_transfer_state.nvs_transfer_buffer_transferred;
+    size_t bytes_remaining = g_transfer_state.nvs_value_length -
+                             g_transfer_state.nvs_transfer_buffer_transferred;
     size_t bytes_to_copy = (bytes_remaining > 60) ? 60 : bytes_remaining;
 
     if (bytes_to_copy > 0) {
         // Check if buffer would overflow
-        if (g_transfer_state.nvs_transfer_buffer_transferred + bytes_to_copy > NVS_TRANSFER_BUFFER_SIZE) {
+        if (g_transfer_state.nvs_transfer_buffer_transferred + bytes_to_copy >
+            NVS_TRANSFER_BUFFER_SIZE) {
             ESP_LOGE(TAG, "NVS transfer buffer overflow");
             g_transfer_state.state = TRANSFER_STATE_ERROR;
             send_response(RESP_ERROR);
             return;
         }
 
-        memcpy(&g_transfer_state.nvs_transfer_buffer[g_transfer_state.nvs_transfer_buffer_transferred],
-               &data[4],
-               bytes_to_copy);
+        memcpy(
+            &g_transfer_state
+                 .nvs_transfer_buffer[g_transfer_state.nvs_transfer_buffer_transferred],
+            &data[4],
+            bytes_to_copy);
         g_transfer_state.nvs_transfer_buffer_transferred += bytes_to_copy;
     }
 
-    ESP_LOGD(TAG, "NVS set data: %lu/%lu bytes", (unsigned long)g_transfer_state.nvs_transfer_buffer_transferred, (unsigned long)g_transfer_state.nvs_value_length);
+    ESP_LOGD(TAG,
+             "NVS set data: %lu/%lu bytes",
+             (unsigned long)g_transfer_state.nvs_transfer_buffer_transferred,
+             (unsigned long)g_transfer_state.nvs_value_length);
 
     send_response(RESP_OK);
 }
@@ -412,8 +451,12 @@ static void handle_nvs_set_finish(void) {
         return;
     }
 
-    if (g_transfer_state.nvs_transfer_buffer_transferred != g_transfer_state.nvs_value_length) {
-        ESP_LOGE(TAG, "NVS set incomplete: received %lu, expected %lu", (unsigned long)g_transfer_state.nvs_transfer_buffer_transferred, (unsigned long)g_transfer_state.nvs_value_length);
+    if (g_transfer_state.nvs_transfer_buffer_transferred !=
+        g_transfer_state.nvs_value_length) {
+        ESP_LOGE(TAG,
+                 "NVS set incomplete: received %lu, expected %lu",
+                 (unsigned long)g_transfer_state.nvs_transfer_buffer_transferred,
+                 (unsigned long)g_transfer_state.nvs_value_length);
         g_transfer_state.state = TRANSFER_STATE_ERROR;
         send_response(RESP_ERROR);
         return;
@@ -432,17 +475,23 @@ static void handle_nvs_set_finish(void) {
     err = ESP_FAIL;
     switch (g_transfer_state.nvs_value_type) {
     case NVS_TYPE_U8:
-        err = nvs_set_u8(nvs_handle, g_transfer_state.nvs_key, g_transfer_state.nvs_transfer_buffer[0]);
+        err = nvs_set_u8(nvs_handle,
+                         g_transfer_state.nvs_key,
+                         g_transfer_state.nvs_transfer_buffer[0]);
         break;
     case NVS_TYPE_I8:
-        err = nvs_set_i8(nvs_handle, g_transfer_state.nvs_key, (int8_t)g_transfer_state.nvs_transfer_buffer[0]);
+        err = nvs_set_i8(nvs_handle,
+                         g_transfer_state.nvs_key,
+                         (int8_t)g_transfer_state.nvs_transfer_buffer[0]);
         break;
     case NVS_TYPE_U16: {
-        uint16_t value = g_transfer_state.nvs_transfer_buffer[0] | (g_transfer_state.nvs_transfer_buffer[1] << 8);
+        uint16_t value = g_transfer_state.nvs_transfer_buffer[0] |
+                         (g_transfer_state.nvs_transfer_buffer[1] << 8);
         err = nvs_set_u16(nvs_handle, g_transfer_state.nvs_key, value);
     } break;
     case NVS_TYPE_I16: {
-        int16_t value = g_transfer_state.nvs_transfer_buffer[0] | (g_transfer_state.nvs_transfer_buffer[1] << 8);
+        int16_t value = g_transfer_state.nvs_transfer_buffer[0] |
+                        (g_transfer_state.nvs_transfer_buffer[1] << 8);
         err = nvs_set_i16(nvs_handle, g_transfer_state.nvs_key, value);
     } break;
     case NVS_TYPE_U32: {
@@ -465,15 +514,21 @@ static void handle_nvs_set_finish(void) {
         err = nvs_set_u64(nvs_handle, g_transfer_state.nvs_key, value);
     } break;
     case NVS_TYPE_I64: {
-        int64_t value = (int64_t)extract_u32(g_transfer_state.nvs_transfer_buffer) |
-                        ((int64_t)extract_u32(&g_transfer_state.nvs_transfer_buffer[4]) << 32);
+        int64_t value =
+            (int64_t)extract_u32(g_transfer_state.nvs_transfer_buffer) |
+            ((int64_t)extract_u32(&g_transfer_state.nvs_transfer_buffer[4]) << 32);
         err = nvs_set_i64(nvs_handle, g_transfer_state.nvs_key, value);
     } break;
     case NVS_TYPE_STR:
-        err = nvs_set_str(nvs_handle, g_transfer_state.nvs_key, (const char *)g_transfer_state.nvs_transfer_buffer);
+        err = nvs_set_str(nvs_handle,
+                          g_transfer_state.nvs_key,
+                          (const char *)g_transfer_state.nvs_transfer_buffer);
         break;
     case NVS_TYPE_BLOB:
-        err = nvs_set_blob(nvs_handle, g_transfer_state.nvs_key, g_transfer_state.nvs_transfer_buffer, g_transfer_state.nvs_value_length);
+        err = nvs_set_blob(nvs_handle,
+                           g_transfer_state.nvs_key,
+                           g_transfer_state.nvs_transfer_buffer,
+                           g_transfer_state.nvs_value_length);
         break;
     }
 
@@ -621,14 +676,20 @@ static void handle_nvs_get_start(const uint8_t *data) {
     } break;
     case NVS_TYPE_STR: {
         size_t required_size = sizeof(g_transfer_state.nvs_transfer_buffer);
-        err = nvs_get_str(nvs_handle, g_transfer_state.nvs_key, (char *)g_transfer_state.nvs_transfer_buffer, &required_size);
+        err = nvs_get_str(nvs_handle,
+                          g_transfer_state.nvs_key,
+                          (char *)g_transfer_state.nvs_transfer_buffer,
+                          &required_size);
         if (err == ESP_OK) {
             value_size = required_size - 1;  // Exclude null terminator
         }
     } break;
     case NVS_TYPE_BLOB: {
         size_t required_size = sizeof(g_transfer_state.nvs_transfer_buffer);
-        err = nvs_get_blob(nvs_handle, g_transfer_state.nvs_key, g_transfer_state.nvs_transfer_buffer, &required_size);
+        err = nvs_get_blob(nvs_handle,
+                           g_transfer_state.nvs_key,
+                           g_transfer_state.nvs_transfer_buffer,
+                           &required_size);
         if (err == ESP_OK) {
             value_size = required_size;
         }
@@ -647,7 +708,11 @@ static void handle_nvs_get_start(const uint8_t *data) {
     g_transfer_state.nvs_value_length = value_size;
     g_transfer_state.state = TRANSFER_STATE_NVS_GETTING;
 
-    ESP_LOGI(TAG, "NVS get started: key='%s', type=0x%02X, length=%lu", g_transfer_state.nvs_key, g_transfer_state.nvs_value_type, (unsigned long)value_size);
+    ESP_LOGI(TAG,
+             "NVS get started: key='%s', type=0x%02X, length=%lu",
+             g_transfer_state.nvs_key,
+             g_transfer_state.nvs_value_type,
+             (unsigned long)value_size);
 
     // Send first chunk with type and size
     uint8_t response_data[60] = {0};
@@ -660,7 +725,8 @@ static void handle_nvs_get_start(const uint8_t *data) {
     // Copy first 55 bytes of value data
     size_t first_chunk_size = (value_size > 55) ? 55 : value_size;
     if (first_chunk_size > 0) {
-        memcpy(&response_data[5], g_transfer_state.nvs_transfer_buffer, first_chunk_size);
+        memcpy(
+            &response_data[5], g_transfer_state.nvs_transfer_buffer, first_chunk_size);
         g_transfer_state.nvs_transfer_buffer_transferred = first_chunk_size;
     }
 
@@ -675,7 +741,8 @@ static void handle_nvs_get_data(void) {
         return;
     }
 
-    if (g_transfer_state.nvs_transfer_buffer_transferred >= g_transfer_state.nvs_value_length) {
+    if (g_transfer_state.nvs_transfer_buffer_transferred >=
+        g_transfer_state.nvs_value_length) {
         ESP_LOGE(TAG, "All NVS data already sent");
         g_transfer_state.state = TRANSFER_STATE_ERROR;
         send_response(RESP_ERROR);
@@ -683,18 +750,22 @@ static void handle_nvs_get_data(void) {
     }
 
     // Calculate how many bytes to send (60 bytes max)
-    size_t bytes_remaining = g_transfer_state.nvs_value_length - g_transfer_state.nvs_transfer_buffer_transferred;
+    size_t bytes_remaining = g_transfer_state.nvs_value_length -
+                             g_transfer_state.nvs_transfer_buffer_transferred;
     size_t bytes_to_send = (bytes_remaining > 60) ? 60 : bytes_remaining;
 
     // Send chunk
-    send_response_with_data(RESP_OK,
-                            &g_transfer_state.nvs_transfer_buffer[g_transfer_state.nvs_transfer_buffer_transferred],
-                            bytes_to_send);
+    send_response_with_data(
+        RESP_OK,
+        &g_transfer_state
+             .nvs_transfer_buffer[g_transfer_state.nvs_transfer_buffer_transferred],
+        bytes_to_send);
 
     g_transfer_state.nvs_transfer_buffer_transferred += bytes_to_send;
 
     // If we've sent all data, reset state
-    if (g_transfer_state.nvs_transfer_buffer_transferred >= g_transfer_state.nvs_value_length) {
+    if (g_transfer_state.nvs_transfer_buffer_transferred >=
+        g_transfer_state.nvs_value_length) {
         ESP_LOGI(TAG, "NVS get completed: key='%s'", g_transfer_state.nvs_key);
         g_transfer_state.state = TRANSFER_STATE_IDLE;
     }
@@ -756,7 +827,19 @@ void usb_system_config_process_command(const uint8_t *data, uint16_t len) {
     }
 
     // Debug: Print what we received
-    ESP_LOGD(TAG, "Received command: len=%d, data[0]=0x%02X, first 8 bytes: %02X %02X %02X %02X %02X %02X %02X %02X", len, data[0], data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7]);
+    ESP_LOGD(TAG,
+             "Received command: len=%d, data[0]=0x%02X, first 8 bytes: %02X %02X %02X "
+             "%02X %02X %02X %02X %02X",
+             len,
+             data[0],
+             data[0],
+             data[1],
+             data[2],
+             data[3],
+             data[4],
+             data[5],
+             data[6],
+             data[7]);
 
     uint8_t command = data[0];  // Command code is currently only on the first byte
 
@@ -768,7 +851,8 @@ void usb_system_config_process_command(const uint8_t *data, uint16_t len) {
             send_response(RESP_ERROR);
             return;
         } else {
-            uint32_t program_size = extract_u32(&data[4]);  // Program size is in bytes 4-7
+            uint32_t program_size =
+                extract_u32(&data[4]);  // Program size is in bytes 4-7
             handle_program_write_start(program_size);
         }
         break;
@@ -792,7 +876,8 @@ void usb_system_config_process_command(const uint8_t *data, uint16_t len) {
             send_response(RESP_ERROR);
             return;
         } else {
-            uint32_t program_size = extract_u32(&data[4]);  // Program size is in bytes 4-7
+            uint32_t program_size =
+                extract_u32(&data[4]);  // Program size is in bytes 4-7
             handle_program_write_finish(program_size);
         }
         break;

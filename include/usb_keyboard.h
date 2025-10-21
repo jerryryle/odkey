@@ -20,9 +20,11 @@ bool usb_keyboard_init(uint8_t interface_num);
  * @param modifier Modifier key to send (or 0 to release all modifiers)
  * @param keys Array of keycodes to send (can be NULL to release all keys)
  * @param count Number of keycodes in the array (0-6, more than 6 will be truncated)
- * @return true if report was enqueued successfully, false if queue is full or module not initialized
- * @note This function is non-blocking and enqueues the report for asynchronous transmission.
- *       The actual USB transmission happens in a separate task when the USB device is ready.
+ * @return true if report was enqueued successfully, false if queue is full or module
+ * not initialized
+ * @note This function is non-blocking and enqueues the report for asynchronous
+ * transmission. The actual USB transmission happens in a separate task when the USB
+ * device is ready.
  */
 bool usb_keyboard_send_keys(uint8_t modifier, const uint8_t *keys, uint8_t count);
 

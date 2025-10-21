@@ -1,6 +1,6 @@
 BasedOnStyle: Google
 IndentWidth: 4
-ColumnLimit: 0
+ColumnLimit: 88
 BreakBeforeBraces: Attach
 AllowShortIfStatementsOnASingleLine: false
 AllowShortLoopsOnASingleLine: false

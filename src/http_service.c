@@ -18,7 +18,8 @@ static const char *TAG = "http_service";
 // HTTP Service Configuration
 #define HTTP_SERVICE_MAX_URI_HANDLERS 8
 #define HTTP_SERVICE_MAX_RESP_HEADERS 8
-#define HTTP_SERVICE_MAX_OPEN_SOCKETS 1  // Single connection to prevent concurrent uploads
+#define HTTP_SERVICE_MAX_OPEN_SOCKETS \
+    1  // Single connection to prevent concurrent uploads
 
 struct http_service_config_t {
     uint16_t service_port;
@@ -76,7 +77,8 @@ static bool load_http_service_configuration(struct http_service_config_t *config
 
     // Try to get API key
     size_t required_size = sizeof(config->api_key);
-    err = nvs_get_str(nvs_handle, NVS_KEY_HTTP_API_KEY, config->api_key, &required_size);
+    err =
+        nvs_get_str(nvs_handle, NVS_KEY_HTTP_API_KEY, config->api_key, &required_size);
     if (err == ESP_OK) {
         ESP_LOGI(TAG, "Found API key in NVS");
     } else {
@@ -95,7 +97,8 @@ static esp_err_t check_api_key(httpd_req_t *req) {
         ESP_LOGW(TAG, "API key not configured, rejecting request");
         httpd_resp_set_status(req, "401 Unauthorized");
         httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, "{\"error\":\"API key not configured\"}", HTTPD_RESP_USE_STRLEN);
+        httpd_resp_send(
+            req, "{\"error\":\"API key not configured\"}", HTTPD_RESP_USE_STRLEN);
         return ESP_FAIL;
     }
 
@@ -105,7 +108,8 @@ static esp_err_t check_api_key(httpd_req_t *req) {
         ESP_LOGW(TAG, "Missing Authorization header");
         httpd_resp_set_status(req, "401 Unauthorized");
         httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, "{\"error\":\"Missing Authorization header\"}", HTTPD_RESP_USE_STRLEN);
+        httpd_resp_send(
+            req, "{\"error\":\"Missing Authorization header\"}", HTTPD_RESP_USE_STRLEN);
         return ESP_FAIL;
     }
 
@@ -115,17 +119,20 @@ static esp_err_t check_api_key(httpd_req_t *req) {
         ESP_LOGE(TAG, "Failed to allocate memory for auth header");
         httpd_resp_set_status(req, "500 Internal Server Error");
         httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, "{\"error\":\"Internal server error\"}", HTTPD_RESP_USE_STRLEN);
+        httpd_resp_send(
+            req, "{\"error\":\"Internal server error\"}", HTTPD_RESP_USE_STRLEN);
         return ESP_FAIL;
     }
 
     // Get the header value
-    if (httpd_req_get_hdr_value_str(req, "Authorization", auth_header, auth_header_len + 1) != ESP_OK) {
+    if (httpd_req_get_hdr_value_str(
+            req, "Authorization", auth_header, auth_header_len + 1) != ESP_OK) {
         ESP_LOGW(TAG, "Failed to get Authorization header");
         free(auth_header);
         httpd_resp_set_status(req, "401 Unauthorized");
         httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, "{\"error\":\"Invalid Authorization header\"}", HTTPD_RESP_USE_STRLEN);
+        httpd_resp_send(
+            req, "{\"error\":\"Invalid Authorization header\"}", HTTPD_RESP_USE_STRLEN);
         return ESP_FAIL;
     }
 
@@ -136,7 +143,9 @@ static esp_err_t check_api_key(httpd_req_t *req) {
         free(auth_header);
         httpd_resp_set_status(req, "401 Unauthorized");
         httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, "{\"error\":\"Invalid Authorization header format\"}", HTTPD_RESP_USE_STRLEN);
+        httpd_resp_send(req,
+                        "{\"error\":\"Invalid Authorization header format\"}",
+                        HTTPD_RESP_USE_STRLEN);
         return ESP_FAIL;
     }
 
@@ -187,7 +196,9 @@ static esp_err_t program_upload_handler(httpd_req_t *req) {
         ESP_LOGE(TAG, "Missing Content-Length header");
         httpd_resp_set_status(req, "400 Bad Request");
         httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, "{\"error\":\"Missing Content-Length header\"}", HTTPD_RESP_USE_STRLEN);
+        httpd_resp_send(req,
+                        "{\"error\":\"Missing Content-Length header\"}",
+                        HTTPD_RESP_USE_STRLEN);
         return ESP_FAIL;
     }
 
@@ -195,7 +206,8 @@ static esp_err_t program_upload_handler(httpd_req_t *req) {
         ESP_LOGE(TAG, "Program too large: %lu bytes", (unsigned long)content_length);
         httpd_resp_set_status(req, "413 Payload Too Large");
         httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, "{\"error\":\"Program too large\"}", HTTPD_RESP_USE_STRLEN);
+        httpd_resp_send(
+            req, "{\"error\":\"Program too large\"}", HTTPD_RESP_USE_STRLEN);
         return ESP_FAIL;
     }
 
@@ -205,7 +217,8 @@ static esp_err_t program_upload_handler(httpd_req_t *req) {
             ESP_LOGW(TAG, "Program upload aborted by callback");
             httpd_resp_set_status(req, "409 Conflict");
             httpd_resp_set_type(req, "application/json");
-            httpd_resp_send(req, "{\"error\":\"Program upload aborted\"}", HTTPD_RESP_USE_STRLEN);
+            httpd_resp_send(
+                req, "{\"error\":\"Program upload aborted\"}", HTTPD_RESP_USE_STRLEN);
             return ESP_FAIL;
         }
     }
@@ -215,7 +228,9 @@ static esp_err_t program_upload_handler(httpd_req_t *req) {
         ESP_LOGE(TAG, "Failed to start program storage write session");
         httpd_resp_set_status(req, "500 Internal Server Error");
         httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, "{\"error\":\"Failed to start program storage\"}", HTTPD_RESP_USE_STRLEN);
+        httpd_resp_send(req,
+                        "{\"error\":\"Failed to start program storage\"}",
+                        HTTPD_RESP_USE_STRLEN);
         return ESP_FAIL;
     }
 
@@ -226,7 +241,8 @@ static esp_err_t program_upload_handler(httpd_req_t *req) {
         ESP_LOGE(TAG, "Failed to get session buffer");
         httpd_resp_set_status(req, "500 Internal Server Error");
         httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, "{\"error\":\"Internal server error\"}", HTTPD_RESP_USE_STRLEN);
+        httpd_resp_send(
+            req, "{\"error\":\"Internal server error\"}", HTTPD_RESP_USE_STRLEN);
         return ESP_FAIL;
     }
 
@@ -234,7 +250,8 @@ static esp_err_t program_upload_handler(httpd_req_t *req) {
     size_t bytes_remaining = content_length;
 
     while (bytes_remaining > 0) {
-        size_t chunk_size = (bytes_remaining > buffer_size) ? buffer_size : bytes_remaining;
+        size_t chunk_size =
+            (bytes_remaining > buffer_size) ? buffer_size : bytes_remaining;
 
         // Read chunk from HTTP request
         int ret = httpd_req_recv(req, (char *)buffer, chunk_size);
@@ -242,7 +259,8 @@ static esp_err_t program_upload_handler(httpd_req_t *req) {
             ESP_LOGE(TAG, "Failed to receive data chunk");
             httpd_resp_set_status(req, "500 Internal Server Error");
             httpd_resp_set_type(req, "application/json");
-            httpd_resp_send(req, "{\"error\":\"Failed to receive data\"}", HTTPD_RESP_USE_STRLEN);
+            httpd_resp_send(
+                req, "{\"error\":\"Failed to receive data\"}", HTTPD_RESP_USE_STRLEN);
             return ESP_FAIL;
         }
 
@@ -251,7 +269,9 @@ static esp_err_t program_upload_handler(httpd_req_t *req) {
             ESP_LOGE(TAG, "Failed to write chunk to program storage");
             httpd_resp_set_status(req, "500 Internal Server Error");
             httpd_resp_set_type(req, "application/json");
-            httpd_resp_send(req, "{\"error\":\"Failed to write to program storage\"}", HTTPD_RESP_USE_STRLEN);
+            httpd_resp_send(req,
+                            "{\"error\":\"Failed to write to program storage\"}",
+                            HTTPD_RESP_USE_STRLEN);
             return ESP_FAIL;
         }
 
@@ -263,14 +283,21 @@ static esp_err_t program_upload_handler(httpd_req_t *req) {
         ESP_LOGE(TAG, "Failed to finish program storage write session");
         httpd_resp_set_status(req, "500 Internal Server Error");
         httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, "{\"error\":\"Failed to finish program storage\"}", HTTPD_RESP_USE_STRLEN);
+        httpd_resp_send(req,
+                        "{\"error\":\"Failed to finish program storage\"}",
+                        HTTPD_RESP_USE_STRLEN);
         return ESP_FAIL;
     }
 
-    ESP_LOGI(TAG, "Program upload completed successfully: %lu bytes", (unsigned long)content_length);
+    ESP_LOGI(TAG,
+             "Program upload completed successfully: %lu bytes",
+             (unsigned long)content_length);
     httpd_resp_set_type(req, "application/json");
     char response[64];
-    snprintf(response, sizeof(response), "{\"success\":true,\"size\":%lu}", (unsigned long)content_length);
+    snprintf(response,
+             sizeof(response),
+             "{\"success\":true,\"size\":%lu}",
+             (unsigned long)content_length);
     httpd_resp_send(req, response, HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
 }
@@ -298,7 +325,8 @@ static esp_err_t program_download_handler(httpd_req_t *req) {
 
     // Set headers for file download
     httpd_resp_set_type(req, "application/octet-stream");
-    httpd_resp_set_hdr(req, "Content-Disposition", "attachment; filename=\"program.bin\"");
+    httpd_resp_set_hdr(
+        req, "Content-Disposition", "attachment; filename=\"program.bin\"");
     httpd_resp_set_hdr(req, "Content-Length", NULL);  // Will be set automatically
 
     // Send program data
@@ -326,7 +354,8 @@ static esp_err_t program_delete_handler(httpd_req_t *req) {
         ESP_LOGE(TAG, "Failed to erase program from storage");
         httpd_resp_set_status(req, "500 Internal Server Error");
         httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, "{\"error\":\"Failed to erase program\"}", HTTPD_RESP_USE_STRLEN);
+        httpd_resp_send(
+            req, "{\"error\":\"Failed to erase program\"}", HTTPD_RESP_USE_STRLEN);
         return ESP_FAIL;
     }
 
@@ -353,7 +382,8 @@ static esp_err_t nvs_get_handler(httpd_req_t *req) {
         ESP_LOGE(TAG, "Invalid key length: %lu", (unsigned long)strlen(key));
         httpd_resp_set_status(req, "400 Bad Request");
         httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, "{\"error\":\"Invalid key length\"}", HTTPD_RESP_USE_STRLEN);
+        httpd_resp_send(
+            req, "{\"error\":\"Invalid key length\"}", HTTPD_RESP_USE_STRLEN);
         return ESP_FAIL;
     }
 
@@ -364,7 +394,8 @@ static esp_err_t nvs_get_handler(httpd_req_t *req) {
         ESP_LOGE(TAG, "Failed to open NVS: %s", esp_err_to_name(err));
         httpd_resp_set_status(req, "500 Internal Server Error");
         httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, "{\"error\":\"Failed to open NVS\"}", HTTPD_RESP_USE_STRLEN);
+        httpd_resp_send(
+            req, "{\"error\":\"Failed to open NVS\"}", HTTPD_RESP_USE_STRLEN);
         return ESP_FAIL;
     }
 
@@ -391,7 +422,8 @@ static esp_err_t nvs_get_handler(httpd_req_t *req) {
 
     // Use part of session buffer for response (limit to reasonable JSON size)
     char *response = (char *)session_buffer;
-    size_t response_size = (buffer_size < 1024) ? buffer_size : 1024;  // Reduced to avoid overlap
+    size_t response_size =
+        (buffer_size < 1024) ? buffer_size : 1024;  // Reduced to avoid overlap
     err = ESP_FAIL;
 
     switch (nvs_type) {
@@ -400,7 +432,8 @@ static esp_err_t nvs_get_handler(httpd_req_t *req) {
         nvs_close(nvs_handle);
         httpd_resp_set_status(req, "500 Internal Server Error");
         httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, "{\"error\":\"Unsupported NVS type\"}", HTTPD_RESP_USE_STRLEN);
+        httpd_resp_send(
+            req, "{\"error\":\"Unsupported NVS type\"}", HTTPD_RESP_USE_STRLEN);
         return ESP_FAIL;
     case NVS_TYPE_U8: {
         uint8_t value;
@@ -434,28 +467,40 @@ static esp_err_t nvs_get_handler(httpd_req_t *req) {
         uint32_t value;
         err = nvs_get_u32(nvs_handle, key, &value);
         if (err == ESP_OK) {
-            snprintf(response, response_size, "{\"type\":\"u32\",\"value\":%lu}", (unsigned long)value);
+            snprintf(response,
+                     response_size,
+                     "{\"type\":\"u32\",\"value\":%lu}",
+                     (unsigned long)value);
         }
     } break;
     case NVS_TYPE_I32: {
         int32_t value;
         err = nvs_get_i32(nvs_handle, key, &value);
         if (err == ESP_OK) {
-            snprintf(response, response_size, "{\"type\":\"i32\",\"value\":%ld}", (long)value);
+            snprintf(response,
+                     response_size,
+                     "{\"type\":\"i32\",\"value\":%ld}",
+                     (long)value);
         }
     } break;
     case NVS_TYPE_U64: {
         uint64_t value;
         err = nvs_get_u64(nvs_handle, key, &value);
         if (err == ESP_OK) {
-            snprintf(response, response_size, "{\"type\":\"u64\",\"value\":%llu}", (unsigned long long)value);
+            snprintf(response,
+                     response_size,
+                     "{\"type\":\"u64\",\"value\":%llu}",
+                     (unsigned long long)value);
         }
     } break;
     case NVS_TYPE_I64: {
         int64_t value;
         err = nvs_get_i64(nvs_handle, key, &value);
         if (err == ESP_OK) {
-            snprintf(response, response_size, "{\"type\":\"i64\",\"value\":%lld}", (long long)value);
+            snprintf(response,
+                     response_size,
+                     "{\"type\":\"i64\",\"value\":%lld}",
+                     (long long)value);
         }
     } break;
     case NVS_TYPE_STR: {
@@ -466,12 +511,16 @@ static esp_err_t nvs_get_handler(httpd_req_t *req) {
             nvs_close(nvs_handle);
             httpd_resp_set_status(req, "500 Internal Server Error");
             httpd_resp_set_type(req, "application/json");
-            httpd_resp_send(req, "{\"error\":\"Memory allocation failed\"}", HTTPD_RESP_USE_STRLEN);
+            httpd_resp_send(
+                req, "{\"error\":\"Memory allocation failed\"}", HTTPD_RESP_USE_STRLEN);
             return ESP_FAIL;
         }
         err = nvs_get_str(nvs_handle, key, str_value, &required_size);
         if (err == ESP_OK) {
-            snprintf(response, response_size, "{\"type\":\"str\",\"value\":\"%s\"}", str_value);
+            snprintf(response,
+                     response_size,
+                     "{\"type\":\"str\",\"value\":\"%s\"}",
+                     str_value);
         }
         free(str_value);
     } break;
@@ -494,7 +543,8 @@ static esp_err_t nvs_get_handler(httpd_req_t *req) {
         ESP_LOGE(TAG, "Failed to get NVS value: %s", esp_err_to_name(err));
         httpd_resp_set_status(req, "500 Internal Server Error");
         httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, "{\"error\":\"Failed to get value\"}", HTTPD_RESP_USE_STRLEN);
+        httpd_resp_send(
+            req, "{\"error\":\"Failed to get value\"}", HTTPD_RESP_USE_STRLEN);
         return ESP_FAIL;
     }
 
@@ -520,7 +570,8 @@ static esp_err_t nvs_set_handler(httpd_req_t *req) {
         ESP_LOGE(TAG, "Invalid key length: %lu", (unsigned long)strlen(key));
         httpd_resp_set_status(req, "400 Bad Request");
         httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, "{\"error\":\"Invalid key length\"}", HTTPD_RESP_USE_STRLEN);
+        httpd_resp_send(
+            req, "{\"error\":\"Invalid key length\"}", HTTPD_RESP_USE_STRLEN);
         return ESP_FAIL;
     }
 
@@ -530,7 +581,8 @@ static esp_err_t nvs_set_handler(httpd_req_t *req) {
         ESP_LOGE(TAG, "Invalid content length: %lu", (unsigned long)content_length);
         httpd_resp_set_status(req, "400 Bad Request");
         httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, "{\"error\":\"Invalid content length\"}", HTTPD_RESP_USE_STRLEN);
+        httpd_resp_send(
+            req, "{\"error\":\"Invalid content length\"}", HTTPD_RESP_USE_STRLEN);
         return ESP_FAIL;
     }
 
@@ -540,7 +592,8 @@ static esp_err_t nvs_set_handler(httpd_req_t *req) {
         ESP_LOGE(TAG, "Failed to allocate memory for JSON body");
         httpd_resp_set_status(req, "500 Internal Server Error");
         httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, "{\"error\":\"Memory allocation failed\"}", HTTPD_RESP_USE_STRLEN);
+        httpd_resp_send(
+            req, "{\"error\":\"Memory allocation failed\"}", HTTPD_RESP_USE_STRLEN);
         return ESP_FAIL;
     }
 
@@ -550,7 +603,9 @@ static esp_err_t nvs_set_handler(httpd_req_t *req) {
         free(json_body);
         httpd_resp_set_status(req, "400 Bad Request");
         httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, "{\"error\":\"Failed to receive request body\"}", HTTPD_RESP_USE_STRLEN);
+        httpd_resp_send(req,
+                        "{\"error\":\"Failed to receive request body\"}",
+                        HTTPD_RESP_USE_STRLEN);
         return ESP_FAIL;
     }
     json_body[content_length] = '\0';
@@ -564,7 +619,8 @@ static esp_err_t nvs_set_handler(httpd_req_t *req) {
         free(json_body);
         httpd_resp_set_status(req, "400 Bad Request");
         httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, "{\"error\":\"Invalid JSON format\"}", HTTPD_RESP_USE_STRLEN);
+        httpd_resp_send(
+            req, "{\"error\":\"Invalid JSON format\"}", HTTPD_RESP_USE_STRLEN);
         return ESP_FAIL;
     }
 
@@ -576,7 +632,8 @@ static esp_err_t nvs_set_handler(httpd_req_t *req) {
         free(json_body);
         httpd_resp_set_status(req, "400 Bad Request");
         httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, "{\"error\":\"Invalid type format\"}", HTTPD_RESP_USE_STRLEN);
+        httpd_resp_send(
+            req, "{\"error\":\"Invalid type format\"}", HTTPD_RESP_USE_STRLEN);
         return ESP_FAIL;
     }
     *type_end = '\0';
@@ -602,7 +659,8 @@ static esp_err_t nvs_set_handler(httpd_req_t *req) {
         free(json_body);
         httpd_resp_set_status(req, "500 Internal Server Error");
         httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, "{\"error\":\"Failed to open NVS\"}", HTTPD_RESP_USE_STRLEN);
+        httpd_resp_send(
+            req, "{\"error\":\"Failed to open NVS\"}", HTTPD_RESP_USE_STRLEN);
         return ESP_FAIL;
     }
 
@@ -663,7 +721,8 @@ static esp_err_t nvs_set_handler(httpd_req_t *req) {
         free(json_body);
         httpd_resp_set_status(req, "500 Internal Server Error");
         httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, "{\"error\":\"Failed to set value\"}", HTTPD_RESP_USE_STRLEN);
+        httpd_resp_send(
+            req, "{\"error\":\"Failed to set value\"}", HTTPD_RESP_USE_STRLEN);
         return ESP_FAIL;
     }
 
@@ -675,7 +734,8 @@ static esp_err_t nvs_set_handler(httpd_req_t *req) {
         free(json_body);
         httpd_resp_set_status(req, "500 Internal Server Error");
         httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, "{\"error\":\"Failed to commit changes\"}", HTTPD_RESP_USE_STRLEN);
+        httpd_resp_send(
+            req, "{\"error\":\"Failed to commit changes\"}", HTTPD_RESP_USE_STRLEN);
         return ESP_FAIL;
     }
 
@@ -705,7 +765,8 @@ static esp_err_t nvs_delete_handler(httpd_req_t *req) {
         ESP_LOGE(TAG, "Invalid key length: %lu", (unsigned long)strlen(key));
         httpd_resp_set_status(req, "400 Bad Request");
         httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, "{\"error\":\"Invalid key length\"}", HTTPD_RESP_USE_STRLEN);
+        httpd_resp_send(
+            req, "{\"error\":\"Invalid key length\"}", HTTPD_RESP_USE_STRLEN);
         return ESP_FAIL;
     }
 
@@ -716,7 +777,8 @@ static esp_err_t nvs_delete_handler(httpd_req_t *req) {
         ESP_LOGE(TAG, "Failed to open NVS: %s", esp_err_to_name(err));
         httpd_resp_set_status(req, "500 Internal Server Error");
         httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, "{\"error\":\"Failed to open NVS\"}", HTTPD_RESP_USE_STRLEN);
+        httpd_resp_send(
+            req, "{\"error\":\"Failed to open NVS\"}", HTTPD_RESP_USE_STRLEN);
         return ESP_FAIL;
     }
 
@@ -727,7 +789,8 @@ static esp_err_t nvs_delete_handler(httpd_req_t *req) {
         nvs_close(nvs_handle);
         httpd_resp_set_status(req, "500 Internal Server Error");
         httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, "{\"error\":\"Failed to delete key\"}", HTTPD_RESP_USE_STRLEN);
+        httpd_resp_send(
+            req, "{\"error\":\"Failed to delete key\"}", HTTPD_RESP_USE_STRLEN);
         return ESP_FAIL;
     }
 
@@ -738,7 +801,8 @@ static esp_err_t nvs_delete_handler(httpd_req_t *req) {
         nvs_close(nvs_handle);
         httpd_resp_set_status(req, "500 Internal Server Error");
         httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, "{\"error\":\"Failed to commit changes\"}", HTTPD_RESP_USE_STRLEN);
+        httpd_resp_send(
+            req, "{\"error\":\"Failed to commit changes\"}", HTTPD_RESP_USE_STRLEN);
         return ESP_FAIL;
     }
 
@@ -751,7 +815,10 @@ static esp_err_t nvs_delete_handler(httpd_req_t *req) {
 }
 
 // WiFi event handler for HTTP service
-static void http_service_wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data) {
+static void http_service_wifi_event_handler(void *arg,
+                                            esp_event_base_t event_base,
+                                            int32_t event_id,
+                                            void *event_data) {
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         if (g_service != NULL) {
             ESP_LOGI(TAG, "WiFi disconnected, stopping HTTP service");
@@ -775,13 +842,15 @@ bool http_service_init(program_upload_start_callback_t on_upload_start) {
     ESP_LOGI(TAG, "HTTP service configuration loaded");
 
     // Register event handlers
-    esp_err_t ret = esp_event_handler_instance_register(WIFI_EVENT,
-                                                        WIFI_EVENT_STA_DISCONNECTED,
-                                                        &http_service_wifi_event_handler,
-                                                        NULL,
-                                                        &g_wifi_event_instance);
+    esp_err_t ret =
+        esp_event_handler_instance_register(WIFI_EVENT,
+                                            WIFI_EVENT_STA_DISCONNECTED,
+                                            &http_service_wifi_event_handler,
+                                            NULL,
+                                            &g_wifi_event_instance);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to register WiFi event handler: %s", esp_err_to_name(ret));
+        ESP_LOGE(
+            TAG, "Failed to register WiFi event handler: %s", esp_err_to_name(ret));
         return false;
     }
 
@@ -792,7 +861,8 @@ bool http_service_init(program_upload_start_callback_t on_upload_start) {
                                               &g_ip_event_instance);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to register IP event handler: %s", esp_err_to_name(ret));
-        esp_event_handler_instance_unregister(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, g_wifi_event_instance);
+        esp_event_handler_instance_unregister(
+            WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, g_wifi_event_instance);
         return false;
     }
 
@@ -866,7 +936,9 @@ static esp_err_t start_http_service(void) {
     config.close_fn = NULL;  // Use default close, our cleanup happens via free_fn
     config.uri_match_fn = httpd_uri_match_wildcard;
 
-    ESP_LOGI(TAG, "HTTP server configured for single connection (prevents concurrent uploads)");
+    ESP_LOGI(
+        TAG,
+        "HTTP server configured for single connection (prevents concurrent uploads)");
 
     // Start the httpd service
     ESP_LOGI(TAG, "Starting HTTP service on port %d", config.server_port);
@@ -878,51 +950,46 @@ static esp_err_t start_http_service(void) {
     }
 
     // Program management endpoints
-    httpd_uri_t program_upload_uri = {
-        .uri = "/api/program",
-        .method = HTTP_POST,
-        .handler = program_upload_handler,
-        .user_ctx = NULL};
+    httpd_uri_t program_upload_uri = {.uri = "/api/program",
+                                      .method = HTTP_POST,
+                                      .handler = program_upload_handler,
+                                      .user_ctx = NULL};
     httpd_register_uri_handler(g_service, &program_upload_uri);
 
-    httpd_uri_t program_download_uri = {
-        .uri = "/api/program",
-        .method = HTTP_GET,
-        .handler = program_download_handler,
-        .user_ctx = NULL};
+    httpd_uri_t program_download_uri = {.uri = "/api/program",
+                                        .method = HTTP_GET,
+                                        .handler = program_download_handler,
+                                        .user_ctx = NULL};
     httpd_register_uri_handler(g_service, &program_download_uri);
 
-    httpd_uri_t program_delete_uri = {
-        .uri = "/api/program",
-        .method = HTTP_DELETE,
-        .handler = program_delete_handler,
-        .user_ctx = NULL};
+    httpd_uri_t program_delete_uri = {.uri = "/api/program",
+                                      .method = HTTP_DELETE,
+                                      .handler = program_delete_handler,
+                                      .user_ctx = NULL};
     httpd_register_uri_handler(g_service, &program_delete_uri);
 
     // NVS management endpoints
-    httpd_uri_t nvs_get_uri = {
-        .uri = "/api/nvs/*",
-        .method = HTTP_GET,
-        .handler = nvs_get_handler,
-        .user_ctx = NULL};
+    httpd_uri_t nvs_get_uri = {.uri = "/api/nvs/*",
+                               .method = HTTP_GET,
+                               .handler = nvs_get_handler,
+                               .user_ctx = NULL};
     httpd_register_uri_handler(g_service, &nvs_get_uri);
 
-    httpd_uri_t nvs_set_uri = {
-        .uri = "/api/nvs/*",
-        .method = HTTP_POST,
-        .handler = nvs_set_handler,
-        .user_ctx = NULL};
+    httpd_uri_t nvs_set_uri = {.uri = "/api/nvs/*",
+                               .method = HTTP_POST,
+                               .handler = nvs_set_handler,
+                               .user_ctx = NULL};
     httpd_register_uri_handler(g_service, &nvs_set_uri);
 
-    httpd_uri_t nvs_delete_uri = {
-        .uri = "/api/nvs/*",
-        .method = HTTP_DELETE,
-        .handler = nvs_delete_handler,
-        .user_ctx = NULL};
+    httpd_uri_t nvs_delete_uri = {.uri = "/api/nvs/*",
+                                  .method = HTTP_DELETE,
+                                  .handler = nvs_delete_handler,
+                                  .user_ctx = NULL};
     httpd_register_uri_handler(g_service, &nvs_delete_uri);
 
     // Add HTTP service to mDNS
-    esp_err_t mdns_err = mdns_service_add(NULL, "_http", "_tcp", g_http_service_config.service_port, NULL, 0);
+    esp_err_t mdns_err = mdns_service_add(
+        NULL, "_http", "_tcp", g_http_service_config.service_port, NULL, 0);
     if (mdns_err != ESP_OK) {
         ESP_LOGW(TAG, "Failed to add mDNS HTTP service: %s", esp_err_to_name(mdns_err));
     }
@@ -940,7 +1007,8 @@ static void stop_http_service(void) {
     // Remove HTTP service from mDNS
     esp_err_t mdns_err = mdns_service_remove("_http", "_tcp");
     if (mdns_err != ESP_OK) {
-        ESP_LOGW(TAG, "Failed to remove mDNS HTTP service: %s", esp_err_to_name(mdns_err));
+        ESP_LOGW(
+            TAG, "Failed to remove mDNS HTTP service: %s", esp_err_to_name(mdns_err));
     }
 
     esp_err_t err = httpd_stop(g_service);

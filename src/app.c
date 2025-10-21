@@ -82,7 +82,8 @@ bool app_init(void) {
     }
 
     // Initialize USB system config module
-    if (!usb_system_config_init(USB_SYSTEM_CONFIG_INTERFACE_NUM, on_program_upload_start)) {
+    if (!usb_system_config_init(USB_SYSTEM_CONFIG_INTERFACE_NUM,
+                                on_program_upload_start)) {
         ESP_LOGE(TAG, "Failed to initialize USB system config");
         return false;
     }
@@ -138,7 +139,9 @@ static void on_button_press(void) {
             program = test_program;
             program_size = sizeof(test_program);
         } else {
-            ESP_LOGI(TAG, "Loaded program from storage (%lu bytes)", (unsigned long)program_size);
+            ESP_LOGI(TAG,
+                     "Loaded program from storage (%lu bytes)",
+                     (unsigned long)program_size);
         }
 
         // Start program execution

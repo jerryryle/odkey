@@ -9,8 +9,9 @@
 extern "C" {
 #endif
 
-#define PROGRAM_STORAGE_PAGE_SIZE 4096                                        // Flash page size in bytes
-#define PROGRAM_STORAGE_MAX_SIZE ((1024 * 1024) - PROGRAM_STORAGE_PAGE_SIZE)  // 1MB total minus reserved first page
+#define PROGRAM_STORAGE_PAGE_SIZE 4096  // Flash page size in bytes
+#define PROGRAM_STORAGE_MAX_SIZE \
+    ((1024 * 1024) - PROGRAM_STORAGE_PAGE_SIZE)  // 1MB total minus reserved first page
 
 /**
  * @brief Program storage write state
@@ -51,7 +52,8 @@ const uint8_t *program_storage_get(uint32_t *out_size);
  * @note Can interrupt an existing write session from a different source
  * @return true on success, false on failure
  */
-bool program_storage_write_start(uint32_t expected_program_size, program_storage_source_t source);
+bool program_storage_write_start(uint32_t expected_program_size,
+                                 program_storage_source_t source);
 
 /**
  * @brief Write a chunk of program data to flash (buffered internally)
@@ -60,15 +62,19 @@ bool program_storage_write_start(uint32_t expected_program_size, program_storage
  * @param source The source requesting the write (must match current owner)
  * @return true on success, false on failure
  */
-bool program_storage_write_chunk(const uint8_t *data, uint32_t size, program_storage_source_t source);
+bool program_storage_write_chunk(const uint8_t *data,
+                                 uint32_t size,
+                                 program_storage_source_t source);
 
 /**
- * @brief Finish writing program to flash (commits the size header, which marks the program as "valid")
+ * @brief Finish writing program to flash (commits the size header, which marks the
+ * program as "valid")
  * @param program_size The size, in bytes, of the program data
  * @param source The source requesting the finish (must match current owner)
  * @return true on success, false on failure
  */
-bool program_storage_write_finish(uint32_t program_size, program_storage_source_t source);
+bool program_storage_write_finish(uint32_t program_size,
+                                  program_storage_source_t source);
 
 /**
  * @brief Get current write state

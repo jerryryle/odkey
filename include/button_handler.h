@@ -20,7 +20,9 @@ typedef void (*button_callback_t)(void);
  * @param callback Function to call when button is pressed (debounced)
  * @return true on success, false on failure
  */
-bool button_handler_init(uint8_t gpio_pin, uint32_t debounce_ms, button_callback_t callback);
+bool button_handler_init(uint8_t gpio_pin,
+                         uint32_t debounce_ms,
+                         button_callback_t callback);
 
 #ifdef __cplusplus
 }

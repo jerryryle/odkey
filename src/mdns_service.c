@@ -25,7 +25,8 @@ bool mdns_service_init(void) {
         ESP_LOGW(TAG, "Failed to open NVS for mDNS config, using defaults");
         mdns_hostname_set(MDNS_HOSTNAME_DEFAULT);
         mdns_instance_name_set(MDNS_INSTANCE_DEFAULT);
-        ESP_LOGI(TAG, "mDNS initialized with defaults: %s.local", MDNS_HOSTNAME_DEFAULT);
+        ESP_LOGI(
+            TAG, "mDNS initialized with defaults: %s.local", MDNS_HOSTNAME_DEFAULT);
         return true;
     }
 
