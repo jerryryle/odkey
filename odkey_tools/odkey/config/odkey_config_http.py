@@ -88,21 +88,27 @@ class ODKeyConfigHttp:
             print(f"Connection failed: {e}")
             return False
 
-    def upload_program(self, program_data: bytes) -> bool:
+    def upload_program(self, program_data: bytes, target: str = "flash") -> bool:
         """
         Upload a program to the ODKey device
 
         Args:
             program_data: Program bytecode data
+            target: Program target ("flash" or "ram")
 
         Returns:
             True if upload successful, False otherwise
         """
         try:
-            print(f"Uploading program to {self.host}:{self.port}...")
+            # Validate target
+            if target not in ["flash", "ram"]:
+                print(f"Error: Invalid target '{target}'")
+                return False
+            
+            print(f"Uploading program to {target.upper()} on {self.host}:{self.port}...")
 
             response = self.session.post(
-                f"{self.base_url}/api/program",
+                f"{self.base_url}/api/program/{target}",
                 data=program_data,
                 headers={"Content-Type": "application/octet-stream"},
                 timeout=30,
@@ -121,17 +127,25 @@ class ODKeyConfigHttp:
             print(f"Upload failed: {e}")
             return False
 
-    def download_program(self) -> Optional[bytes]:
+    def download_program(self, target: str = "flash") -> Optional[bytes]:
         """
         Download the current program from the ODKey device
+
+        Args:
+            target: Program target ("flash" or "ram")
 
         Returns:
             Program bytecode data if successful, None otherwise
         """
         try:
-            print(f"Downloading program from {self.host}:{self.port}...")
+            # Validate target
+            if target not in ["flash", "ram"]:
+                print(f"Error: Invalid target '{target}'")
+                return None
+            
+            print(f"Downloading {target.upper()} program from {self.host}:{self.port}...")
 
-            response = self.session.get(f"{self.base_url}/api/program", timeout=30)
+            response = self.session.get(f"{self.base_url}/api/program/{target}", timeout=30)
 
             if response.status_code == 200:
                 print(
@@ -161,7 +175,7 @@ class ODKeyConfigHttp:
         try:
             print(f"Deleting program from {self.host}:{self.port}...")
 
-            response = self.session.delete(f"{self.base_url}/api/program", timeout=30)
+            response = self.session.delete(f"{self.base_url}/api/program/flash", timeout=30)
 
             if response.status_code == 200:
                 print("Program deleted successfully")
@@ -289,6 +303,37 @@ class ODKeyConfigHttp:
 
         except requests.exceptions.RequestException as e:
             print(f"Delete failed: {e}")
+            return False
+
+    def execute_program(self, target: str = "flash") -> bool:
+        """
+        Execute a program on the device
+        
+        Args:
+            target: Program target ("flash" or "ram")
+        
+        Returns:
+            True if execution successful, False otherwise
+        """
+        try:
+            # Validate target
+            if target not in ["flash", "ram"]:
+                print(f"Error: Invalid target '{target}'")
+                return False
+            
+            endpoint = f"/api/program/{target}/execute"
+            response = self.session.post(f"{self.base_url}{endpoint}", timeout=30)
+            
+            if response.status_code == 200:
+                print(f"{target.upper()} program execution started")
+                return True
+            else:
+                print(f"Execute failed: HTTP {response.status_code}")
+                if response.text:
+                    print(f"Error: {response.text}")
+                return False
+        except requests.exceptions.RequestException as e:
+            print(f"Execute failed: {e}")
             return False
 
     def close(self) -> None:

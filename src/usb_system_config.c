@@ -3,8 +3,9 @@
 #include "esp_log.h"
 #include "nvs.h"
 #include "nvs_flash.h"
-#include "program_storage.h"
+#include "program.h"
 #include "tinyusb.h"
+#include "vm_task.h"
 
 static const char *TAG = "usb_system_config";
 
@@ -15,17 +16,24 @@ static const char *TAG = "usb_system_config";
 #define RESP_OK 0x10     // Success response
 #define RESP_ERROR 0x11  // Error response
 
-#define CMD_PROGRAM_WRITE_START 0x20   // Start write session (erase + init)
-#define CMD_PROGRAM_WRITE_CHUNK 0x21   // Write 60-byte data chunk (bytes 4-63)
-#define CMD_PROGRAM_WRITE_FINISH 0x22  // Finish write (commit with program size)
-#define CMD_PROGRAM_READ_START 0x23    // Start read session (get program size)
-#define CMD_PROGRAM_READ_CHUNK 0x24    // Read next 60-byte chunk
-#define CMD_NVS_SET_START 0x30         // Start NVS set operation
-#define CMD_NVS_SET_DATA 0x31          // Send NVS value data chunk
-#define CMD_NVS_SET_FINISH 0x32        // Finish NVS set operation
-#define CMD_NVS_GET_START 0x33         // Start NVS get operation
-#define CMD_NVS_GET_DATA 0x34          // Read NVS value data chunk
-#define CMD_NVS_DELETE 0x35            // Delete NVS key
+#define CMD_FLASH_PROGRAM_WRITE_START 0x20   // Start FLASH program write session
+#define CMD_FLASH_PROGRAM_WRITE_CHUNK 0x21   // Write FLASH program data chunk
+#define CMD_FLASH_PROGRAM_WRITE_FINISH 0x22  // Finish FLASH program write session
+#define CMD_FLASH_PROGRAM_READ_START 0x23    // Start FLASH program read session
+#define CMD_FLASH_PROGRAM_READ_CHUNK 0x24    // Read next FLASH program data chunk
+#define CMD_FLASH_PROGRAM_EXECUTE 0x25       // Execute FLASH program
+#define CMD_RAM_PROGRAM_WRITE_START 0x26     // Start RAM program write session
+#define CMD_RAM_PROGRAM_WRITE_CHUNK 0x27     // Write RAM program data chunk
+#define CMD_RAM_PROGRAM_WRITE_FINISH 0x28    // Finish RAM program write session
+#define CMD_RAM_PROGRAM_READ_START 0x29      // Start RAM program read session
+#define CMD_RAM_PROGRAM_READ_CHUNK 0x2A      // Read next RAM program data chunk
+#define CMD_RAM_PROGRAM_EXECUTE 0x2B         // Execute RAM program
+#define CMD_NVS_SET_START 0x30               // Start NVS set operation
+#define CMD_NVS_SET_DATA 0x31                // Send NVS value data chunk
+#define CMD_NVS_SET_FINISH 0x32              // Finish NVS set operation
+#define CMD_NVS_GET_START 0x33               // Start NVS get operation
+#define CMD_NVS_GET_DATA 0x34                // Read NVS value data chunk
+#define CMD_NVS_DELETE 0x35                  // Delete NVS key
 
 // Upload/Download/NVS state
 typedef enum {
@@ -34,6 +42,7 @@ typedef enum {
     TRANSFER_STATE_READING,
     TRANSFER_STATE_NVS_SETTING,
     TRANSFER_STATE_NVS_GETTING,
+    TRANSFER_STATE_RAM_WRITING,
     TRANSFER_STATE_ERROR
 } transfer_state_t;
 
@@ -134,9 +143,9 @@ static void send_response_with_data(uint8_t response_id,
              (unsigned long)copy_len);
 }
 
-// Handle CMD_PROGRAM_WRITE_START command
-static void handle_program_write_start(uint32_t program_size) {
-    if ((program_size == 0) || (program_size > PROGRAM_STORAGE_MAX_SIZE)) {
+// Handle CMD_FLASH_PROGRAM_WRITE_START command
+static void handle_flash_program_write_start(uint32_t program_size) {
+    if ((program_size == 0) || (program_size > PROGRAM_FLASH_MAX_SIZE)) {
         ESP_LOGE(TAG, "Invalid program size: %lu", (unsigned long)program_size);
         send_response(RESP_ERROR);
         return;
@@ -153,7 +162,8 @@ static void handle_program_write_start(uint32_t program_size) {
     }
 
     // Start program storage write session
-    if (!program_storage_write_start(program_size, PROGRAM_STORAGE_SOURCE_USB)) {
+    if (!program_write_start(
+            PROGRAM_TYPE_FLASH, program_size, PROGRAM_WRITE_SOURCE_USB)) {
         ESP_LOGE(TAG, "Failed to start program storage write session");
         send_response(RESP_ERROR);
         return;
@@ -166,8 +176,9 @@ static void handle_program_write_start(uint32_t program_size) {
     send_response(RESP_OK);
 }
 
-// Handle CMD_PROGRAM_WRITE_CHUNK command
-static void handle_program_write_chunk(const uint8_t *chunk_data, uint16_t chunk_size) {
+// Handle CMD_FLASH_PROGRAM_WRITE_CHUNK command
+static void handle_flash_program_write_chunk(const uint8_t *chunk_data,
+                                             uint16_t chunk_size) {
     if (g_transfer_state.state != TRANSFER_STATE_WRITING) {
         ESP_LOGE(TAG, "PROGRAM_WRITE_CHUNK received but not in writing state");
         send_response(RESP_ERROR);
@@ -183,15 +194,17 @@ static void handle_program_write_chunk(const uint8_t *chunk_data, uint16_t chunk
     }
 
     // Calculate how many bytes of actual program data are in this chunk
-    size_t expected_size = program_storage_get_expected_size();
-    size_t bytes_written = program_storage_get_bytes_written();
+    size_t expected_size = program_get_expected_size(PROGRAM_TYPE_FLASH);
+    size_t bytes_written = program_get_bytes_written(PROGRAM_TYPE_FLASH);
     size_t program_bytes_remaining = expected_size - bytes_written;
     size_t actual_chunk_size =
         (program_bytes_remaining < chunk_size) ? program_bytes_remaining : chunk_size;
 
     // Write chunk to program storage
-    if (!program_storage_write_chunk(
-            chunk_data, actual_chunk_size, PROGRAM_STORAGE_SOURCE_USB)) {
+    if (!program_write_chunk(PROGRAM_TYPE_FLASH,
+                             chunk_data,
+                             actual_chunk_size,
+                             PROGRAM_WRITE_SOURCE_USB)) {
         ESP_LOGE(TAG, "Failed to write chunk to program storage");
         g_transfer_state.state = TRANSFER_STATE_ERROR;
         send_response(RESP_ERROR);
@@ -200,27 +213,28 @@ static void handle_program_write_chunk(const uint8_t *chunk_data, uint16_t chunk
 
     ESP_LOGD(TAG,
              "Buffered chunk: %lu/%lu bytes (program)",
-             (unsigned long)program_storage_get_bytes_written(),
+             (unsigned long)program_get_bytes_written(PROGRAM_TYPE_FLASH),
              (unsigned long)expected_size);
 
     send_response(RESP_OK);
 }
 
-// Handle CMD_PROGRAM_WRITE_FINISH command
-static void handle_program_write_finish(uint32_t program_size) {
+// Handle CMD_FLASH_PROGRAM_WRITE_FINISH command
+static void handle_flash_program_write_finish(uint32_t program_size) {
     if (g_transfer_state.state != TRANSFER_STATE_WRITING) {
         ESP_LOGE(TAG, "PROGRAM_WRITE_FINISH received but not in writing state");
         send_response(RESP_ERROR);
         return;
     }
-    if ((program_size == 0) || (program_size > PROGRAM_STORAGE_MAX_SIZE)) {
+    if ((program_size == 0) || (program_size > PROGRAM_FLASH_MAX_SIZE)) {
         ESP_LOGE(TAG, "Invalid program size: %lu", (unsigned long)program_size);
         send_response(RESP_ERROR);
         return;
     }
 
     // Finish program storage write session
-    if (!program_storage_write_finish(program_size, PROGRAM_STORAGE_SOURCE_USB)) {
+    if (!program_write_finish(
+            PROGRAM_TYPE_FLASH, program_size, PROGRAM_WRITE_SOURCE_USB)) {
         ESP_LOGE(TAG, "Failed to finish program storage write session");
         g_transfer_state.state = TRANSFER_STATE_ERROR;
         send_response(RESP_ERROR);
@@ -236,11 +250,11 @@ static void handle_program_write_finish(uint32_t program_size) {
     send_response(RESP_OK);
 }
 
-// Handle CMD_PROGRAM_READ_START command
-static void handle_program_read_start(void) {
+// Handle CMD_FLASH_PROGRAM_READ_START command
+static void handle_flash_program_read_start(void) {
     // Get program from storage
     uint32_t program_size;
-    const uint8_t *program_data = program_storage_get(&program_size);
+    const uint8_t *program_data = program_get(PROGRAM_TYPE_FLASH, &program_size);
 
     if (program_data == NULL || program_size == 0) {
         ESP_LOGE(TAG, "No program stored in flash");
@@ -267,7 +281,7 @@ static void handle_program_read_start(void) {
     send_response_with_data(RESP_OK, size_data, 4);
 }
 
-// Handle CMD_PROGRAM_READ_CHUNK command
+// Handle CMD_FLASH_PROGRAM_READ_CHUNK and CMD_RAM_PROGRAM_READ_CHUNK command
 static void handle_program_read_chunk(void) {
     if (g_transfer_state.state != TRANSFER_STATE_READING) {
         ESP_LOGE(TAG, "PROGRAM_READ_CHUNK received but not in reading state");
@@ -316,6 +330,205 @@ static void handle_program_read_chunk(void) {
         g_transfer_state.program_bytes_read = 0;
         g_transfer_state.program_data = NULL;
     }
+}
+
+// Handle CMD_FLASH_PROGRAM_EXECUTE command
+static void handle_flash_program_execute(void) {
+    // Get flash program from storage
+    uint32_t program_size;
+    const uint8_t *program_data = program_get(PROGRAM_TYPE_FLASH, &program_size);
+
+    if (program_data == NULL || program_size == 0) {
+        ESP_LOGE(TAG, "No flash program stored");
+        send_response(RESP_ERROR);
+        return;
+    }
+
+    // Halt any currently running program
+    if (!vm_task_halt()) {
+        ESP_LOGW(TAG, "Failed to halt current program");
+    }
+
+    // Start flash program execution
+    if (!vm_task_start_program(program_data, program_size)) {
+        ESP_LOGE(TAG, "Failed to start flash program execution");
+        send_response(RESP_ERROR);
+        return;
+    }
+
+    ESP_LOGI(
+        TAG, "Flash program execution started: %lu bytes", (unsigned long)program_size);
+    send_response(RESP_OK);
+}
+
+// Handle CMD_RAM_PROGRAM_WRITE_START command
+static void handle_ram_program_write_start(uint32_t program_size) {
+    if ((program_size == 0) || (program_size > PROGRAM_RAM_MAX_SIZE)) {
+        ESP_LOGE(TAG, "Invalid RAM program size: %lu", (unsigned long)program_size);
+        send_response(RESP_ERROR);
+        return;
+    }
+
+    // Notify that program upload is starting
+    if (g_transfer_state.on_upload_start) {
+        ESP_LOGI(TAG, "RAM program upload starting - notifying callback");
+        if (!g_transfer_state.on_upload_start()) {
+            ESP_LOGW(TAG, "RAM program upload aborted by callback");
+            send_response(RESP_ERROR);
+            return;
+        }
+    }
+
+    // Start RAM program storage write session
+    if (!program_write_start(
+            PROGRAM_TYPE_RAM, program_size, PROGRAM_WRITE_SOURCE_USB)) {
+        ESP_LOGE(TAG, "Failed to start RAM program storage write session");
+        send_response(RESP_ERROR);
+        return;
+    }
+
+    g_transfer_state.state = TRANSFER_STATE_RAM_WRITING;
+
+    ESP_LOGI(TAG,
+             "RAM write session started, program: %lu bytes",
+             (unsigned long)program_size);
+    send_response(RESP_OK);
+}
+
+// Handle CMD_RAM_PROGRAM_WRITE_CHUNK command
+static void handle_ram_program_write_chunk(const uint8_t *chunk_data,
+                                           uint16_t chunk_size) {
+    if (g_transfer_state.state != TRANSFER_STATE_RAM_WRITING) {
+        ESP_LOGE(TAG, "RAM_PROGRAM_WRITE_CHUNK received but not in RAM writing state");
+        send_response(RESP_ERROR);
+        return;
+    }
+
+    if (chunk_size != 60) {
+        ESP_LOGE(TAG,
+                 "RAM_PROGRAM_WRITE_CHUNK must be exactly 60 bytes, got %d",
+                 chunk_size);
+        g_transfer_state.state = TRANSFER_STATE_ERROR;
+        send_response(RESP_ERROR);
+        return;
+    }
+
+    // Calculate how many bytes of actual program data are in this chunk
+    size_t expected_size = program_get_expected_size(PROGRAM_TYPE_RAM);
+    size_t bytes_written = program_get_bytes_written(PROGRAM_TYPE_RAM);
+    size_t program_bytes_remaining = expected_size - bytes_written;
+    size_t actual_chunk_size =
+        (program_bytes_remaining < chunk_size) ? program_bytes_remaining : chunk_size;
+
+    // Write chunk to RAM program storage
+    if (!program_write_chunk(PROGRAM_TYPE_RAM,
+                             chunk_data,
+                             actual_chunk_size,
+                             PROGRAM_WRITE_SOURCE_USB)) {
+        ESP_LOGE(TAG, "Failed to write chunk to RAM program storage");
+        g_transfer_state.state = TRANSFER_STATE_ERROR;
+        send_response(RESP_ERROR);
+        return;
+    }
+
+    ESP_LOGD(TAG,
+             "Buffered RAM chunk: %lu/%lu bytes (program)",
+             (unsigned long)program_get_bytes_written(PROGRAM_TYPE_RAM),
+             (unsigned long)expected_size);
+
+    send_response(RESP_OK);
+}
+
+// Handle CMD_RAM_PROGRAM_WRITE_FINISH command
+static void handle_ram_program_write_finish(uint32_t program_size) {
+    if (g_transfer_state.state != TRANSFER_STATE_RAM_WRITING) {
+        ESP_LOGE(TAG, "RAM_PROGRAM_WRITE_FINISH received but not in RAM writing state");
+        send_response(RESP_ERROR);
+        return;
+    }
+    if ((program_size == 0) || (program_size > PROGRAM_RAM_MAX_SIZE)) {
+        ESP_LOGE(TAG, "Invalid RAM program size: %lu", (unsigned long)program_size);
+        send_response(RESP_ERROR);
+        return;
+    }
+
+    // Finish RAM program storage write session
+    if (!program_write_finish(
+            PROGRAM_TYPE_RAM, program_size, PROGRAM_WRITE_SOURCE_USB)) {
+        ESP_LOGE(TAG, "Failed to finish RAM program storage write session");
+        g_transfer_state.state = TRANSFER_STATE_ERROR;
+        send_response(RESP_ERROR);
+        return;
+    }
+
+    ESP_LOGI(TAG,
+             "RAM write session completed successfully: %lu bytes",
+             (unsigned long)program_size);
+
+    g_transfer_state.state = TRANSFER_STATE_IDLE;
+
+    send_response(RESP_OK);
+}
+
+// Handle CMD_RAM_PROGRAM_EXECUTE command
+static void handle_ram_program_execute(void) {
+    // Get RAM program from storage
+    uint32_t program_size;
+    const uint8_t *program_data = program_get(PROGRAM_TYPE_RAM, &program_size);
+
+    if (program_data == NULL || program_size == 0) {
+        ESP_LOGE(TAG, "No RAM program stored");
+        send_response(RESP_ERROR);
+        return;
+    }
+
+    // Halt any currently running program
+    if (!vm_task_halt()) {
+        ESP_LOGW(TAG, "Failed to halt current program");
+    }
+
+    // Start RAM program execution
+    if (!vm_task_start_program(program_data, program_size)) {
+        ESP_LOGE(TAG, "Failed to start RAM program execution");
+        send_response(RESP_ERROR);
+        return;
+    }
+
+    ESP_LOGI(
+        TAG, "RAM program execution started: %lu bytes", (unsigned long)program_size);
+    send_response(RESP_OK);
+}
+
+// Handle CMD_RAM_PROGRAM_READ_START command
+static void handle_ram_program_read_start(void) {
+    // Get RAM program from storage
+    uint32_t program_size;
+    const uint8_t *program_data = program_get(PROGRAM_TYPE_RAM, &program_size);
+
+    if (program_data == NULL || program_size == 0) {
+        ESP_LOGE(TAG, "No RAM program stored");
+        send_response(RESP_ERROR);
+        return;
+    }
+
+    // Initialize read state
+    g_transfer_state.state = TRANSFER_STATE_READING;
+    g_transfer_state.total_program_size = program_size;
+    g_transfer_state.program_bytes_read = 0;
+    g_transfer_state.program_data = program_data;
+
+    ESP_LOGI(TAG,
+             "RAM read session started, program: %lu bytes",
+             (unsigned long)program_size);
+
+    // Send response with program size in bytes 4-7
+    uint8_t size_data[4];
+    size_data[0] = (uint8_t)(program_size & 0xFF);
+    size_data[1] = (uint8_t)((program_size >> 8) & 0xFF);
+    size_data[2] = (uint8_t)((program_size >> 16) & 0xFF);
+    size_data[3] = (uint8_t)((program_size >> 24) & 0xFF);
+
+    send_response_with_data(RESP_OK, size_data, 4);
 }
 
 // Handle CMD_NVS_SET_START command
@@ -844,7 +1057,7 @@ void usb_system_config_process_command(const uint8_t *data, uint16_t len) {
     uint8_t command = data[0];  // Command code is currently only on the first byte
 
     switch (command) {
-    case CMD_PROGRAM_WRITE_START:
+    case CMD_FLASH_PROGRAM_WRITE_START:
         if (len < 8)  // Need command code + 4 bytes for program size
         {
             ESP_LOGE(TAG, "PROGRAM_WRITE_START command too short");
@@ -853,11 +1066,11 @@ void usb_system_config_process_command(const uint8_t *data, uint16_t len) {
         } else {
             uint32_t program_size =
                 extract_u32(&data[4]);  // Program size is in bytes 4-7
-            handle_program_write_start(program_size);
+            handle_flash_program_write_start(program_size);
         }
         break;
 
-    case CMD_PROGRAM_WRITE_CHUNK:
+    case CMD_FLASH_PROGRAM_WRITE_CHUNK:
         if (len != 64)  // Must be exactly 64 bytes
         {
             ESP_LOGE(TAG, "PROGRAM_WRITE_CHUNK must be exactly 64 bytes, got %d", len);
@@ -865,11 +1078,11 @@ void usb_system_config_process_command(const uint8_t *data, uint16_t len) {
             return;
         } else {
             const uint8_t *chunk_data = &data[4];  // Data payload is in bytes 4-63
-            handle_program_write_chunk(chunk_data, 60);
+            handle_flash_program_write_chunk(chunk_data, 60);
         }
         break;
 
-    case CMD_PROGRAM_WRITE_FINISH:
+    case CMD_FLASH_PROGRAM_WRITE_FINISH:
         if (len < 8)  // Need command code + 4 bytes for program size
         {
             ESP_LOGE(TAG, "PROGRAM_WRITE_FINISH command too short");
@@ -878,16 +1091,71 @@ void usb_system_config_process_command(const uint8_t *data, uint16_t len) {
         } else {
             uint32_t program_size =
                 extract_u32(&data[4]);  // Program size is in bytes 4-7
-            handle_program_write_finish(program_size);
+            handle_flash_program_write_finish(program_size);
         }
         break;
 
-    case CMD_PROGRAM_READ_START:
-        handle_program_read_start();
+    case CMD_FLASH_PROGRAM_READ_START:
+        handle_flash_program_read_start();
         break;
 
-    case CMD_PROGRAM_READ_CHUNK:
+    case CMD_FLASH_PROGRAM_READ_CHUNK:
         handle_program_read_chunk();
+        break;
+
+    case CMD_FLASH_PROGRAM_EXECUTE:
+        handle_flash_program_execute();
+        break;
+
+    case CMD_RAM_PROGRAM_WRITE_START:
+        if (len < 8)  // Need command code + 4 bytes for program size
+        {
+            ESP_LOGE(TAG, "RAM_PROGRAM_WRITE_START command too short");
+            send_response(RESP_ERROR);
+            return;
+        } else {
+            uint32_t program_size =
+                extract_u32(&data[4]);  // Program size is in bytes 4-7
+            handle_ram_program_write_start(program_size);
+        }
+        break;
+
+    case CMD_RAM_PROGRAM_WRITE_CHUNK:
+        if (len != 64)  // Must be exactly 64 bytes
+        {
+            ESP_LOGE(
+                TAG, "RAM_PROGRAM_WRITE_CHUNK must be exactly 64 bytes, got %d", len);
+            send_response(RESP_ERROR);
+            return;
+        } else {
+            const uint8_t *chunk_data = &data[4];  // Data payload is in bytes 4-63
+            handle_ram_program_write_chunk(chunk_data, 60);
+        }
+        break;
+
+    case CMD_RAM_PROGRAM_WRITE_FINISH:
+        if (len < 8)  // Need command code + 4 bytes for program size
+        {
+            ESP_LOGE(TAG, "RAM_PROGRAM_WRITE_FINISH command too short");
+            send_response(RESP_ERROR);
+            return;
+        } else {
+            uint32_t program_size =
+                extract_u32(&data[4]);  // Program size is in bytes 4-7
+            handle_ram_program_write_finish(program_size);
+        }
+        break;
+
+    case CMD_RAM_PROGRAM_EXECUTE:
+        handle_ram_program_execute();
+        break;
+
+    case CMD_RAM_PROGRAM_READ_START:
+        handle_ram_program_read_start();
+        break;
+
+    case CMD_RAM_PROGRAM_READ_CHUNK:
+        handle_program_read_chunk();  // Reuse same logic for chunk reading
         break;
 
     case CMD_NVS_SET_START:

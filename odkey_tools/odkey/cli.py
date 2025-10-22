@@ -89,11 +89,15 @@ def upload_command(args: Any) -> int:
         print("Supported types: .odk (ODKeyScript source), .bin (compiled bytecode)")
         return 1
 
-    # Check program size
-    max_size = 1024 * 1024  # 1MB
+    # Check program size based on target
+    if args.target == "ram":
+        max_size = 8 * 1024  # 8KB
+    else:  # flash
+        max_size = 1024 * 1024  # 1MB
+
     if len(program_data) > max_size:
-        print(f"Error: Program too large ({len(program_data)} bytes)")
-        print(f"Maximum size: {max_size} bytes")
+        print(f"Error: Program too large for {args.target} ({len(program_data)} bytes)")
+        print(f"Maximum size for {args.target}: {max_size} bytes")
         return 1
 
     # Select interface and upload to device
@@ -110,10 +114,19 @@ def upload_command(args: Any) -> int:
         if args.interface == "usb" and not config.find_device():
             return 1
 
-        if not config.upload_program(program_data):
+        if not config.upload_program(program_data, target=args.target):
             return 1
 
         print("Upload completed successfully!")
+
+        # Execute program if requested
+        if args.execute:
+            print(f"Executing {args.target.upper()} program...")
+            if not config.execute_program(target=args.target):
+                print("Execution failed!")
+                return 1
+            print("Execution started successfully!")
+
         return 0
 
     except Exception as e:
@@ -141,7 +154,7 @@ def download_command(args: Any) -> int:
 
         # Download program
         try:
-            program_data = config.download_program()
+            program_data = config.download_program(target=args.target)
             if program_data is None:
                 return 1
         except ODKeyUploadError as e:
@@ -174,6 +187,36 @@ def download_command(args: Any) -> int:
 
     except Exception as e:
         print(f"Download failed: {e}")
+        return 1
+    finally:
+        config.close()
+
+
+def execute_command(args: Any) -> int:
+    """Handle the execute command"""
+    # Select interface and connect to device
+    if args.interface == "wifi":
+        config: Union[ODKeyConfigUsb, ODKeyConfigHttp] = ODKeyConfigHttp(
+            args.host, args.port, args.api_key
+        )
+    else:  # usb
+        config = ODKeyConfigUsb(args.device_path)
+        config.usb_vid = args.vid
+        config.usb_pid = args.pid
+
+    try:
+        if args.interface == "usb" and not config.find_device():
+            return 1
+
+        # Execute program
+        if not config.execute_program(target=args.target):
+            return 1
+
+        print("Execution started successfully!")
+        return 0
+
+    except Exception as e:
+        print(f"Execution failed: {e}")
         return 1
     finally:
         config.close()
@@ -366,10 +409,12 @@ def main() -> int:
 Examples:
   %(prog)s compile program.odk program.bin     # Compile ODKeyScript to bytecode
   %(prog)s disassemble program.bin             # Disassemble bytecode to text
-  %(prog)s upload program.odk                  # Compile and upload to device
-  %(prog)s upload program.bin                  # Upload pre-compiled bytecode
-  %(prog)s download --output program.bin       # Download and save program
-  %(prog)s download --disassemble              # Download and display disassembly
+  %(prog)s upload program.odk --execute        # Upload to RAM and execute
+  %(prog)s upload program.odk --target flash   # Upload to flash storage
+  %(prog)s download --target ram               # Download from RAM
+  %(prog)s download --target flash             # Download from flash (default)
+  %(prog)s execute --target flash              # Execute flash program
+  %(prog)s execute --target ram                # Execute RAM program (default)
   %(prog)s nvs-set wifi_ssid "MyNetwork"       # Set a string value
   %(prog)s nvs-set http_port 80 --type u16     # Set an integer value
   %(prog)s nvs-set cert --file cert.pem --type blob  # Set blob from file
@@ -437,6 +482,17 @@ Examples:
         "--api-key", help="API key for authentication (for wifi interface)"
     )
     upload_parser.add_argument(
+        "--target",
+        choices=["ram", "flash"],
+        default="ram",
+        help="Program target (default: ram)",
+    )
+    upload_parser.add_argument(
+        "--execute",
+        action="store_true",
+        help="Execute program after upload",
+    )
+    upload_parser.add_argument(
         "--verbose", "-v", action="store_true", help="Enable verbose output"
     )
 
@@ -487,6 +543,57 @@ Examples:
         help="HTTP port (default: 80, for wifi interface)",
     )
     download_parser.add_argument(
+        "--api-key", help="API key for authentication (for wifi interface)"
+    )
+    download_parser.add_argument(
+        "--target",
+        choices=["ram", "flash"],
+        default="flash",
+        help="Program target (default: flash)",
+    )
+
+    # Execute command
+    execute_parser = subparsers.add_parser(
+        "execute", help="Execute program on ODKey device"
+    )
+    execute_parser.add_argument(
+        "--target",
+        choices=["ram", "flash"],
+        default="ram",
+        help="Program target (default: ram)",
+    )
+    execute_parser.add_argument(
+        "--vid",
+        type=lambda x: int(x, 0),
+        default=0x303A,
+        help="USB Vendor ID (default: 0x303A)",
+    )
+    execute_parser.add_argument(
+        "--pid",
+        type=lambda x: int(x, 0),
+        default=0x4008,
+        help="USB Product ID (default: 0x4008)",
+    )
+    execute_parser.add_argument("--device-path", help="Specific HID device path to use")
+    execute_parser.add_argument(
+        "--interface",
+        "-i",
+        choices=["usb", "wifi"],
+        default="usb",
+        help="Communication interface (default: usb)",
+    )
+    execute_parser.add_argument(
+        "--host",
+        default="odkey.local",
+        help="Device hostname or IP address (default: odkey.local, for wifi interface)",
+    )
+    execute_parser.add_argument(
+        "--port",
+        type=int,
+        default=80,
+        help="HTTP port (default: 80, for wifi interface)",
+    )
+    execute_parser.add_argument(
         "--api-key", help="API key for authentication (for wifi interface)"
     )
 
@@ -650,6 +757,8 @@ Examples:
         return upload_command(args)
     elif args.command == "download":
         return download_command(args)
+    elif args.command == "execute":
+        return execute_command(args)
     elif args.command == "nvs-set":
         return nvs_set_command(args)
     elif args.command == "nvs-get":

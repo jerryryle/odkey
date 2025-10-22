@@ -1,4 +1,4 @@
-#include "program_storage.h"
+#include "program_flash.h"
 #include <string.h>
 #include "esp_flash.h"
 #include "esp_log.h"
@@ -7,7 +7,7 @@
 #include "freertos/semphr.h"
 #include "spi_flash_mmap.h"
 
-static const char *TAG = "program_storage";
+static const char *TAG = "program_flash";
 
 #define PROGRAM_STORAGE_PARTITION_LABEL "odkey_programs"
 
@@ -30,24 +30,24 @@ static esp_partition_mmap_handle_t g_mmap_handle = 0;
 // Mutex to protect shared state
 static SemaphoreHandle_t g_write_state_mutex = NULL;
 
-// Chunked write state
+// Chunked write state for flash
 static struct {
-    uint32_t expected_size;                     // Expected program size
-    uint32_t bytes_written;                     // Total bytes written to flash
-    uint32_t buffer_offset;                     // Current position in buffer
-    uint8_t buffer[PROGRAM_STORAGE_PAGE_SIZE];  // 4KB page buffer
-    program_storage_write_state_t state;        // IDLE, WRITING, ERROR
-    program_storage_source_t current_source;    // Current owner of write session
+    uint32_t expected_size;                   // Expected program size
+    uint32_t bytes_written;                   // Total bytes written to flash
+    uint32_t buffer_offset;                   // Current position in buffer
+    uint8_t buffer[PROGRAM_FLASH_PAGE_SIZE];  // 4KB page buffer
+    program_storage_write_state_t state;      // IDLE, WRITING, ERROR
+    program_write_source_t current_source;    // Current owner of write session
 } g_write_state = {0};
 
 // Helper function to convert source enum to string
-static const char *source_to_string(program_storage_source_t source) {
+static const char *source_to_string(program_write_source_t source) {
     switch (source) {
-    case PROGRAM_STORAGE_SOURCE_USB:
+    case PROGRAM_WRITE_SOURCE_USB:
         return "USB";
-    case PROGRAM_STORAGE_SOURCE_HTTP:
+    case PROGRAM_WRITE_SOURCE_HTTP:
         return "HTTP";
-    case PROGRAM_STORAGE_SOURCE_NONE:
+    case PROGRAM_WRITE_SOURCE_NONE:
     default:
         return "NONE";
     }
@@ -60,7 +60,7 @@ static void reset_write_state_unsafe(void) {
     g_write_state.buffer_offset = 0;
     memset(g_write_state.buffer, 0, sizeof(g_write_state.buffer));
     g_write_state.state = PROGRAM_STORAGE_STATE_IDLE;
-    g_write_state.current_source = PROGRAM_STORAGE_SOURCE_NONE;
+    g_write_state.current_source = PROGRAM_WRITE_SOURCE_NONE;
 }
 
 // Internal function to write a full page to flash (assumes mutex is held)
@@ -70,10 +70,10 @@ static bool write_page_to_flash_unsafe(const uint8_t *page_data, size_t page_siz
         return false;
     }
 
-    if (page_data == NULL || page_size != PROGRAM_STORAGE_PAGE_SIZE) {
+    if (page_data == NULL || page_size != PROGRAM_FLASH_PAGE_SIZE) {
         ESP_LOGE(TAG,
                  "Page data cannot be NULL and page_size must be exactly %d bytes",
-                 PROGRAM_STORAGE_PAGE_SIZE);
+                 PROGRAM_FLASH_PAGE_SIZE);
         return false;
     }
 
@@ -98,7 +98,7 @@ static bool write_page_to_flash_unsafe(const uint8_t *page_data, size_t page_siz
     return true;
 }
 
-bool program_storage_init(void) {
+bool program_flash_init(void) {
     // Create mutex to protect shared state
     g_write_state_mutex = xSemaphoreCreateMutex();
     if (g_write_state_mutex == NULL) {
@@ -144,8 +144,8 @@ bool program_storage_init(void) {
     return true;
 }
 
-// Internal function to get program data (assumes mutex is held)
-static const uint8_t *program_storage_get_unsafe(uint32_t *out_size) {
+// Internal function to get flash program data (assumes mutex is held)
+static const uint8_t *program_flash_get_unsafe(uint32_t *out_size) {
     if (g_program_partition == NULL || g_mmap_data == NULL) {
         ESP_LOGE(TAG, "Program storage not initialized");
         if (out_size)
@@ -175,7 +175,7 @@ static const uint8_t *program_storage_get_unsafe(uint32_t *out_size) {
     memcpy(&program_size, data, sizeof(program_size));
 
     // Check if partition is empty (all zeros) or has invalid size
-    if ((program_size == 0) || (program_size > PROGRAM_STORAGE_MAX_SIZE)) {
+    if ((program_size == 0) || (program_size > PROGRAM_FLASH_MAX_SIZE)) {
         ESP_LOGD(TAG,
                  "No valid program in storage (size: %lu)",
                  (unsigned long)program_size);
@@ -187,10 +187,10 @@ static const uint8_t *program_storage_get_unsafe(uint32_t *out_size) {
     *out_size = program_size;
 
     // Return pointer to program data (skip the size header page)
-    return data + PROGRAM_STORAGE_PAGE_SIZE;
+    return data + PROGRAM_FLASH_PAGE_SIZE;
 }
 
-const uint8_t *program_storage_get(uint32_t *out_size) {
+const uint8_t *program_flash_get(uint32_t *out_size) {
     if (g_write_state_mutex == NULL) {
         ESP_LOGE(TAG, "Program storage not initialized");
         if (out_size)
@@ -206,34 +206,34 @@ const uint8_t *program_storage_get(uint32_t *out_size) {
         return NULL;
     }
 
-    const uint8_t *result = program_storage_get_unsafe(out_size);
+    const uint8_t *result = program_flash_get_unsafe(out_size);
     xSemaphoreGive(g_write_state_mutex);
     return result;
 }
 
-static bool program_storage_write_start_unsafe(uint32_t expected_program_size,
-                                               program_storage_source_t source) {
+static bool program_flash_write_start_unsafe(uint32_t expected_program_size,
+                                             program_write_source_t source) {
     // Validate expected program size
     if (expected_program_size == 0) {
         ESP_LOGE(TAG, "Expected program size cannot be zero");
         return false;
     }
 
-    if (expected_program_size > PROGRAM_STORAGE_MAX_SIZE) {
+    if (expected_program_size > PROGRAM_FLASH_MAX_SIZE) {
         ESP_LOGE(TAG,
                  "Expected program size too large: %lu bytes (max: %lu)",
                  (unsigned long)expected_program_size,
-                 (unsigned long)(PROGRAM_STORAGE_MAX_SIZE));
+                 (unsigned long)(PROGRAM_FLASH_MAX_SIZE));
         return false;
     }
 
     // Calculate sectors needed (round up to 4KB boundaries)
     // ESP32 flash sectors are 4KB (0x1000 bytes)
     // We need to erase: reserved first page + program data
-    uint32_t total_size_needed = PROGRAM_STORAGE_PAGE_SIZE + expected_program_size;
-    uint32_t sectors_needed = (total_size_needed + (PROGRAM_STORAGE_PAGE_SIZE - 1)) /
-                              PROGRAM_STORAGE_PAGE_SIZE;
-    uint32_t erase_size = sectors_needed * PROGRAM_STORAGE_PAGE_SIZE;
+    uint32_t total_size_needed = PROGRAM_FLASH_PAGE_SIZE + expected_program_size;
+    uint32_t sectors_needed =
+        (total_size_needed + (PROGRAM_FLASH_PAGE_SIZE - 1)) / PROGRAM_FLASH_PAGE_SIZE;
+    uint32_t erase_size = sectors_needed * PROGRAM_FLASH_PAGE_SIZE;
 
     // Check if we're interrupting an existing write session
     if (g_write_state.state == PROGRAM_STORAGE_STATE_WRITING &&
@@ -261,8 +261,8 @@ static bool program_storage_write_start_unsafe(uint32_t expected_program_size,
 
     // Initialize write state
     g_write_state.bytes_written =
-        PROGRAM_STORAGE_PAGE_SIZE;  // Skip over the entire first page (reserved for
-                                    // size header)
+        PROGRAM_FLASH_PAGE_SIZE;  // Skip over the entire first page (reserved for
+                                  // size header)
     g_write_state.expected_size = expected_program_size;
     g_write_state.buffer_offset = 0;
     memset(g_write_state.buffer, 0, sizeof(g_write_state.buffer));
@@ -272,8 +272,8 @@ static bool program_storage_write_start_unsafe(uint32_t expected_program_size,
     return true;
 }
 
-bool program_storage_write_start(uint32_t expected_program_size,
-                                 program_storage_source_t source) {
+bool program_flash_write_start(uint32_t expected_program_size,
+                               program_write_source_t source) {
     if (g_program_partition == NULL || g_write_state_mutex == NULL) {
         ESP_LOGE(TAG, "Program storage not initialized");
         return false;
@@ -285,14 +285,14 @@ bool program_storage_write_start(uint32_t expected_program_size,
         return false;
     }
 
-    bool result = program_storage_write_start_unsafe(expected_program_size, source);
+    bool result = program_flash_write_start_unsafe(expected_program_size, source);
     xSemaphoreGive(g_write_state_mutex);
     return result;
 }
 
-static bool program_storage_write_chunk_unsafe(const uint8_t *data,
-                                               uint32_t size,
-                                               program_storage_source_t source) {
+static bool program_flash_write_chunk_unsafe(const uint8_t *data,
+                                             uint32_t size,
+                                             program_write_source_t source) {
     if (g_write_state.state != PROGRAM_STORAGE_STATE_WRITING) {
         ESP_LOGE(
             TAG,
@@ -320,11 +320,11 @@ static bool program_storage_write_chunk_unsafe(const uint8_t *data,
         return false;
     }
 
-    if (size > PROGRAM_STORAGE_PAGE_SIZE) {
+    if (size > PROGRAM_FLASH_PAGE_SIZE) {
         ESP_LOGE(TAG,
                  "Write size too large: %lu bytes (max: %d)",
                  (unsigned long)size,
-                 PROGRAM_STORAGE_PAGE_SIZE);
+                 PROGRAM_FLASH_PAGE_SIZE);
         g_write_state.state = PROGRAM_STORAGE_STATE_ERROR;
         return false;
     }
@@ -332,7 +332,7 @@ static bool program_storage_write_chunk_unsafe(const uint8_t *data,
     // Check if we would exceed expected total size
     size_t program_bytes_written =
         g_write_state.bytes_written -
-        PROGRAM_STORAGE_PAGE_SIZE;  // Subtract reserved first page
+        PROGRAM_FLASH_PAGE_SIZE;  // Subtract reserved first page
     if (program_bytes_written + size > g_write_state.expected_size) {
         ESP_LOGE(TAG,
                  "Write would exceed expected total size: %lu + %lu > %lu",
@@ -348,7 +348,7 @@ static bool program_storage_write_chunk_unsafe(const uint8_t *data,
 
     while (bytes_remaining > 0) {
         // Calculate how many bytes we can copy to the buffer
-        uint32_t buffer_space = PROGRAM_STORAGE_PAGE_SIZE - g_write_state.buffer_offset;
+        uint32_t buffer_space = PROGRAM_FLASH_PAGE_SIZE - g_write_state.buffer_offset;
         uint32_t bytes_to_copy =
             (bytes_remaining < buffer_space) ? bytes_remaining : buffer_space;
 
@@ -363,9 +363,9 @@ static bool program_storage_write_chunk_unsafe(const uint8_t *data,
         data_ptr += bytes_to_copy;
 
         // If buffer is full, write it out
-        if (g_write_state.buffer_offset >= PROGRAM_STORAGE_PAGE_SIZE) {
+        if (g_write_state.buffer_offset >= PROGRAM_FLASH_PAGE_SIZE) {
             if (!write_page_to_flash_unsafe(g_write_state.buffer,
-                                            PROGRAM_STORAGE_PAGE_SIZE)) {
+                                            PROGRAM_FLASH_PAGE_SIZE)) {
                 ESP_LOGE(TAG, "Failed to write page to flash");
                 g_write_state.state = PROGRAM_STORAGE_STATE_ERROR;
                 return false;
@@ -380,15 +380,15 @@ static bool program_storage_write_chunk_unsafe(const uint8_t *data,
     ESP_LOGD(TAG,
              "Buffered %lu bytes, total written: %lu/%lu",
              (unsigned long)size,
-             (unsigned long)(g_write_state.bytes_written - PROGRAM_STORAGE_PAGE_SIZE),
+             (unsigned long)(g_write_state.bytes_written - PROGRAM_FLASH_PAGE_SIZE),
              (unsigned long)g_write_state.expected_size);
 
     return true;
 }
 
-bool program_storage_write_chunk(const uint8_t *data,
-                                 uint32_t size,
-                                 program_storage_source_t source) {
+bool program_flash_write_chunk(const uint8_t *data,
+                               uint32_t size,
+                               program_write_source_t source) {
     if (g_program_partition == NULL || g_write_state_mutex == NULL) {
         ESP_LOGE(TAG, "Program storage not initialized");
         return false;
@@ -400,13 +400,13 @@ bool program_storage_write_chunk(const uint8_t *data,
         return false;
     }
 
-    bool result = program_storage_write_chunk_unsafe(data, size, source);
+    bool result = program_flash_write_chunk_unsafe(data, size, source);
     xSemaphoreGive(g_write_state_mutex);
     return result;
 }
 
-static bool program_storage_write_finish_unsafe(uint32_t program_size,
-                                                program_storage_source_t source) {
+static bool program_flash_write_finish_unsafe(uint32_t program_size,
+                                              program_write_source_t source) {
     if (g_write_state.state != PROGRAM_STORAGE_STATE_WRITING) {
         ESP_LOGE(
             TAG,
@@ -429,11 +429,11 @@ static bool program_storage_write_finish_unsafe(uint32_t program_size,
         return false;
     }
 
-    if (program_size > PROGRAM_STORAGE_MAX_SIZE) {
+    if (program_size > PROGRAM_FLASH_MAX_SIZE) {
         ESP_LOGE(TAG,
                  "Program too large: %lu bytes (max: %lu)",
                  (unsigned long)program_size,
-                 (unsigned long)(PROGRAM_STORAGE_MAX_SIZE));
+                 (unsigned long)(PROGRAM_FLASH_MAX_SIZE));
         g_write_state.state = PROGRAM_STORAGE_STATE_ERROR;
         return false;
     }
@@ -441,7 +441,7 @@ static bool program_storage_write_finish_unsafe(uint32_t program_size,
     // If there's remaining data in the buffer, write it as a final page
     if (g_write_state.buffer_offset > 0) {
         if (!write_page_to_flash_unsafe(g_write_state.buffer,
-                                        PROGRAM_STORAGE_PAGE_SIZE)) {
+                                        PROGRAM_FLASH_PAGE_SIZE)) {
             ESP_LOGE(TAG, "Failed to write final page to flash");
             g_write_state.state = PROGRAM_STORAGE_STATE_ERROR;
             return false;
@@ -452,7 +452,7 @@ static bool program_storage_write_finish_unsafe(uint32_t program_size,
     // program (accounting for page alignment - we may have written more due to padding)
     uint32_t program_bytes_written =
         g_write_state.bytes_written -
-        PROGRAM_STORAGE_PAGE_SIZE;  // Reserved page + program data
+        PROGRAM_FLASH_PAGE_SIZE;  // Reserved page + program data
     if (program_bytes_written < program_size) {
         ESP_LOGE(TAG,
                  "Insufficient program data written: %lu bytes written, expected at "
@@ -483,8 +483,7 @@ static bool program_storage_write_finish_unsafe(uint32_t program_size,
     return true;
 }
 
-bool program_storage_write_finish(uint32_t program_size,
-                                  program_storage_source_t source) {
+bool program_flash_write_finish(uint32_t program_size, program_write_source_t source) {
     if (g_write_state_mutex == NULL) {
         ESP_LOGE(TAG, "Program storage not initialized");
         return false;
@@ -496,18 +495,18 @@ bool program_storage_write_finish(uint32_t program_size,
         return false;
     }
 
-    bool result = program_storage_write_finish_unsafe(program_size, source);
+    bool result = program_flash_write_finish_unsafe(program_size, source);
     xSemaphoreGive(g_write_state_mutex);
     return result;
 }
 
-bool program_storage_erase(void) {
+bool program_flash_erase(void) {
     if (g_program_partition == NULL) {
         ESP_LOGE(TAG, "Program storage not initialized");
         return false;
     }
 
-    ESP_LOGI(TAG, "Erasing program from storage");
+    ESP_LOGI(TAG, "Erasing program from flash storage");
 
     // Erase the entire partition
     esp_err_t ret =
@@ -517,11 +516,11 @@ bool program_storage_erase(void) {
         return false;
     }
 
-    ESP_LOGI(TAG, "Successfully erased program from storage");
+    ESP_LOGI(TAG, "Successfully erased program from flash storage");
     return true;
 }
 
-uint32_t program_storage_get_bytes_written(void) {
+uint32_t program_flash_get_bytes_written(void) {
     if (g_write_state_mutex == NULL) {
         return 0;
     }
@@ -532,15 +531,15 @@ uint32_t program_storage_get_bytes_written(void) {
 
     // Return only the program bytes written (excluding the reserved first page)
     uint32_t bytes_written = 0;
-    if (g_write_state.bytes_written > PROGRAM_STORAGE_PAGE_SIZE) {
-        bytes_written = g_write_state.bytes_written - PROGRAM_STORAGE_PAGE_SIZE;
+    if (g_write_state.bytes_written > PROGRAM_FLASH_PAGE_SIZE) {
+        bytes_written = g_write_state.bytes_written - PROGRAM_FLASH_PAGE_SIZE;
     }
 
     xSemaphoreGive(g_write_state_mutex);
     return bytes_written;
 }
 
-uint32_t program_storage_get_expected_size(void) {
+uint32_t program_flash_get_expected_size(void) {
     if (g_write_state_mutex == NULL) {
         return 0;
     }

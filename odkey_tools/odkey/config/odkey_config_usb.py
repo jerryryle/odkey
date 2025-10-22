@@ -24,11 +24,21 @@ from ..odkeyscript.odkeyscript_compiler import CompileError, Compiler
 RESP_OK = 0x10
 RESP_ERROR = 0x11
 
-CMD_PROGRAM_WRITE_START = 0x20
-CMD_PROGRAM_WRITE_CHUNK = 0x21
-CMD_PROGRAM_WRITE_FINISH = 0x22
-CMD_PROGRAM_READ_START = 0x23
-CMD_PROGRAM_READ_CHUNK = 0x24
+# Flash program commands
+CMD_FLASH_PROGRAM_WRITE_START = 0x20
+CMD_FLASH_PROGRAM_WRITE_CHUNK = 0x21
+CMD_FLASH_PROGRAM_WRITE_FINISH = 0x22
+CMD_FLASH_PROGRAM_READ_START = 0x23
+CMD_FLASH_PROGRAM_READ_CHUNK = 0x24
+CMD_FLASH_PROGRAM_EXECUTE = 0x25
+
+# RAM program commands
+CMD_RAM_PROGRAM_WRITE_START = 0x26
+CMD_RAM_PROGRAM_WRITE_CHUNK = 0x27
+CMD_RAM_PROGRAM_WRITE_FINISH = 0x28
+CMD_RAM_PROGRAM_READ_START = 0x29
+CMD_RAM_PROGRAM_READ_CHUNK = 0x2A
+CMD_RAM_PROGRAM_EXECUTE = 0x2B
 CMD_NVS_SET_START = 0x30
 CMD_NVS_SET_DATA = 0x31
 CMD_NVS_SET_FINISH = 0x32
@@ -70,6 +80,10 @@ RAW_HID_REPORT_SIZE = 64
 DATA_PAYLOAD_SIZE = 60  # 60 bytes of data payload (bytes 4-63)
 USB_VID = 0x303A
 USB_PID = 0x4008
+
+# Program size limits (matching firmware)
+PROGRAM_FLASH_MAX_SIZE = 1024 * 1024  # 1MB
+PROGRAM_RAM_MAX_SIZE = 8 * 1024  # 8KB
 
 
 class ODKeyUploadError(Exception):
@@ -193,12 +207,13 @@ class ODKeyConfigUsb:
             print(f"Error sending command: {e}")
             return False, b""
 
-    def upload_program(self, program_data: bytes) -> bool:
+    def upload_program(self, program_data: bytes, target: str = "flash") -> bool:
         """
         Upload a program to the device
 
         Args:
             program_data: Compiled program bytecode
+            target: Program target ("flash" or "ram")
 
         Returns:
             True if upload successful, False otherwise
@@ -207,12 +222,34 @@ class ODKeyConfigUsb:
             raise ODKeyUploadError("Device not connected")
 
         program_size = len(program_data)
-        print(f"Uploading program ({program_size} bytes)...")
+
+        # Validate target
+        if target not in ["flash", "ram"]:
+            raise ODKeyUploadError(f"Invalid target: {target}")
+
+        # Validate size based on target
+        max_size = PROGRAM_FLASH_MAX_SIZE if target == "flash" else PROGRAM_RAM_MAX_SIZE
+        if program_size > max_size:
+            raise ODKeyUploadError(
+                f"Program too large for {target}: {program_size} bytes (max: {max_size})"
+            )
+
+        print(f"Uploading program to {target.upper()} ({program_size} bytes)...")
+
+        # Select command codes based on target
+        if target == "flash":
+            cmd_start = CMD_FLASH_PROGRAM_WRITE_START
+            cmd_chunk = CMD_FLASH_PROGRAM_WRITE_CHUNK
+            cmd_finish = CMD_FLASH_PROGRAM_WRITE_FINISH
+        else:  # ram
+            cmd_start = CMD_RAM_PROGRAM_WRITE_START
+            cmd_chunk = CMD_RAM_PROGRAM_WRITE_CHUNK
+            cmd_finish = CMD_RAM_PROGRAM_WRITE_FINISH
 
         # Step 1: Send WRITE_START command
         print("Starting write session...")
         size_data = struct.pack("<I", program_size)  # 32-bit little-endian
-        success, response = self.send_command(CMD_PROGRAM_WRITE_START, size_data)
+        success, response = self.send_command(cmd_start, size_data)
         if not success:
             print("Failed to start write session")
             return False
@@ -233,7 +270,7 @@ class ODKeyConfigUsb:
                 )
 
             print(f"Sending chunk {chunk_count + 1} ({chunk_size} bytes)...")
-            success, response = self.send_command(CMD_PROGRAM_WRITE_CHUNK, chunk_data)
+            success, response = self.send_command(cmd_chunk, chunk_data)
             if not success:
                 print(f"Failed to send chunk {chunk_count + 1}")
                 return False
@@ -247,7 +284,7 @@ class ODKeyConfigUsb:
 
         # Step 3: Send WRITE_FINISH command
         print("Finishing write session...")
-        success, response = self.send_command(CMD_PROGRAM_WRITE_FINISH, size_data)
+        success, response = self.send_command(cmd_finish, size_data)
         if not success:
             print("Failed to finish write session")
             return False
@@ -255,9 +292,12 @@ class ODKeyConfigUsb:
         print("Program uploaded successfully!")
         return True
 
-    def download_program(self) -> bytes:
+    def download_program(self, target: str = "flash") -> bytes:
         """
         Download a program from the device
+
+        Args:
+            target: Program target ("flash" or "ram")
 
         Returns:
             Program bytecode as bytes
@@ -268,11 +308,23 @@ class ODKeyConfigUsb:
         if not self.device:
             raise ODKeyUploadError("Device not connected")
 
-        print("Downloading program...")
+        # Validate target
+        if target not in ["flash", "ram"]:
+            raise ODKeyUploadError(f"Invalid target: {target}")
+
+        print(f"Downloading {target.upper()} program...")
+
+        # Select command codes based on target
+        if target == "flash":
+            cmd_start = CMD_FLASH_PROGRAM_READ_START
+            cmd_chunk = CMD_FLASH_PROGRAM_READ_CHUNK
+        else:  # ram
+            cmd_start = CMD_RAM_PROGRAM_READ_START
+            cmd_chunk = CMD_RAM_PROGRAM_READ_CHUNK
 
         # Step 1: Send READ_START command
         print("Starting read session...")
-        success, response = self.send_command(CMD_PROGRAM_READ_START, b"")
+        success, response = self.send_command(cmd_start, b"")
         if not success:
             raise ODKeyUploadError("Failed to start read session")
 
@@ -293,7 +345,7 @@ class ODKeyConfigUsb:
 
         while bytes_received < program_size:
             print(f"Reading chunk {chunk_count + 1}...")
-            success, response = self.send_command(CMD_PROGRAM_READ_CHUNK, b"")
+            success, response = self.send_command(cmd_chunk, b"")
             if not success:
                 raise ODKeyUploadError(f"Failed to read chunk {chunk_count + 1}")
 
@@ -314,6 +366,38 @@ class ODKeyConfigUsb:
         print("Program downloaded successfully!")
         # Truncate to exact program size (chunks are padded to 60 bytes)
         return bytes(program_data[:program_size])
+
+    def execute_program(self, target: str = "flash") -> bool:
+        """
+        Execute a program on the device
+
+        Args:
+            target: Program target ("flash" or "ram")
+
+        Returns:
+            True if execution successful, False otherwise
+        """
+        if not self.device:
+            raise ODKeyUploadError("Device not connected")
+
+        # Validate target
+        if target not in ["flash", "ram"]:
+            raise ODKeyUploadError(f"Invalid target: {target}")
+
+        # Select command code based on target
+        cmd = (
+            CMD_FLASH_PROGRAM_EXECUTE if target == "flash" else CMD_RAM_PROGRAM_EXECUTE
+        )
+
+        print(f"Executing {target.upper()} program...")
+        success, response = self.send_command(cmd, b"")
+
+        if success:
+            print(f"{target.upper()} program execution started")
+        else:
+            print(f"Failed to execute {target} program")
+
+        return success
 
     def nvs_set_int(self, key: str, value: int, type_str: str) -> None:
         """

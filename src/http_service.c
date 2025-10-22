@@ -7,7 +7,8 @@
 #include "esp_wifi.h"
 #include "mdns.h"
 #include "nvs_odkey.h"
-#include "program_storage.h"
+#include "program.h"
+#include "vm_task.h"
 #include "wifi.h"
 
 static const char *TAG = "http_service";
@@ -16,7 +17,7 @@ static const char *TAG = "http_service";
 #define HTTP_SERVICE_PORT_DEFAULT 80
 
 // HTTP Service Configuration
-#define HTTP_SERVICE_MAX_URI_HANDLERS 8
+#define HTTP_SERVICE_MAX_URI_HANDLERS 16
 #define HTTP_SERVICE_MAX_RESP_HEADERS 8
 #define HTTP_SERVICE_MAX_OPEN_SOCKETS \
     1  // Single connection to prevent concurrent uploads
@@ -181,9 +182,9 @@ static uint8_t *get_session_buffer(httpd_req_t *req, size_t *out_size) {
     return ctx->buffer;
 }
 
-// Program upload handler - POST /api/program
-static esp_err_t program_upload_handler(httpd_req_t *req) {
-    ESP_LOGI(TAG, "Program upload request received");
+// Program upload handler - POST /api/program/flash
+static esp_err_t flash_program_upload_handler(httpd_req_t *req) {
+    ESP_LOGI(TAG, "Flash program upload request received");
 
     // Check authentication
     if (check_api_key(req) != ESP_OK) {
@@ -202,8 +203,9 @@ static esp_err_t program_upload_handler(httpd_req_t *req) {
         return ESP_FAIL;
     }
 
-    if (content_length > PROGRAM_STORAGE_MAX_SIZE) {
-        ESP_LOGE(TAG, "Program too large: %lu bytes", (unsigned long)content_length);
+    if (content_length > PROGRAM_FLASH_MAX_SIZE) {
+        ESP_LOGE(
+            TAG, "Flash program too large: %lu bytes", (unsigned long)content_length);
         httpd_resp_set_status(req, "413 Payload Too Large");
         httpd_resp_set_type(req, "application/json");
         httpd_resp_send(
@@ -214,22 +216,24 @@ static esp_err_t program_upload_handler(httpd_req_t *req) {
     // Notify that program upload is starting (same as USB)
     if (g_http_service_config.on_upload_start) {
         if (!g_http_service_config.on_upload_start()) {
-            ESP_LOGW(TAG, "Program upload aborted by callback");
+            ESP_LOGW(TAG, "Flash program upload aborted by callback");
             httpd_resp_set_status(req, "409 Conflict");
             httpd_resp_set_type(req, "application/json");
-            httpd_resp_send(
-                req, "{\"error\":\"Program upload aborted\"}", HTTPD_RESP_USE_STRLEN);
+            httpd_resp_send(req,
+                            "{\"error\":\"Flash program upload aborted\"}",
+                            HTTPD_RESP_USE_STRLEN);
             return ESP_FAIL;
         }
     }
 
     // Start program storage write session
-    if (!program_storage_write_start(content_length, PROGRAM_STORAGE_SOURCE_HTTP)) {
-        ESP_LOGE(TAG, "Failed to start program storage write session");
+    if (!program_write_start(
+            PROGRAM_TYPE_FLASH, content_length, PROGRAM_WRITE_SOURCE_HTTP)) {
+        ESP_LOGE(TAG, "Failed to start flash program storage write session");
         httpd_resp_set_status(req, "500 Internal Server Error");
         httpd_resp_set_type(req, "application/json");
         httpd_resp_send(req,
-                        "{\"error\":\"Failed to start program storage\"}",
+                        "{\"error\":\"Failed to start flash program storage\"}",
                         HTTPD_RESP_USE_STRLEN);
         return ESP_FAIL;
     }
@@ -265,12 +269,13 @@ static esp_err_t program_upload_handler(httpd_req_t *req) {
         }
 
         // Write chunk to program storage
-        if (!program_storage_write_chunk(buffer, ret, PROGRAM_STORAGE_SOURCE_HTTP)) {
-            ESP_LOGE(TAG, "Failed to write chunk to program storage");
+        if (!program_write_chunk(
+                PROGRAM_TYPE_FLASH, buffer, ret, PROGRAM_WRITE_SOURCE_HTTP)) {
+            ESP_LOGE(TAG, "Failed to write chunk to flash program");
             httpd_resp_set_status(req, "500 Internal Server Error");
             httpd_resp_set_type(req, "application/json");
             httpd_resp_send(req,
-                            "{\"error\":\"Failed to write to program storage\"}",
+                            "{\"error\":\"Failed to write to flash program\"}",
                             HTTPD_RESP_USE_STRLEN);
             return ESP_FAIL;
         }
@@ -279,18 +284,19 @@ static esp_err_t program_upload_handler(httpd_req_t *req) {
     }
 
     // Finish program storage write session
-    if (!program_storage_write_finish(content_length, PROGRAM_STORAGE_SOURCE_HTTP)) {
-        ESP_LOGE(TAG, "Failed to finish program storage write session");
+    if (!program_write_finish(
+            PROGRAM_TYPE_FLASH, content_length, PROGRAM_WRITE_SOURCE_HTTP)) {
+        ESP_LOGE(TAG, "Failed to finish flash program write session");
         httpd_resp_set_status(req, "500 Internal Server Error");
         httpd_resp_set_type(req, "application/json");
         httpd_resp_send(req,
-                        "{\"error\":\"Failed to finish program storage\"}",
+                        "{\"error\":\"Failed to finish flash program\"}",
                         HTTPD_RESP_USE_STRLEN);
         return ESP_FAIL;
     }
 
     ESP_LOGI(TAG,
-             "Program upload completed successfully: %lu bytes",
+             "Flash program upload completed successfully: %lu bytes",
              (unsigned long)content_length);
     httpd_resp_set_type(req, "application/json");
     char response[64];
@@ -302,18 +308,18 @@ static esp_err_t program_upload_handler(httpd_req_t *req) {
     return ESP_OK;
 }
 
-// Program download handler - GET /api/program
-static esp_err_t program_download_handler(httpd_req_t *req) {
-    ESP_LOGI(TAG, "Program download request received");
+// Flash program download handler - GET /api/program/flash
+static esp_err_t flash_program_download_handler(httpd_req_t *req) {
+    ESP_LOGI(TAG, "Flash program download request received");
 
     // Check authentication
     if (check_api_key(req) != ESP_OK) {
         return ESP_FAIL;
     }
 
-    // Get program from storage
+    // Get flash program
     uint32_t program_size;
-    const uint8_t *program_data = program_storage_get(&program_size);
+    const uint8_t *program_data = program_get(PROGRAM_TYPE_FLASH, &program_size);
 
     if (program_data == NULL || program_size == 0) {
         ESP_LOGW(TAG, "No program stored in flash");
@@ -332,34 +338,318 @@ static esp_err_t program_download_handler(httpd_req_t *req) {
     // Send program data
     esp_err_t ret = httpd_resp_send(req, (const char *)program_data, program_size);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to send program data");
+        ESP_LOGE(TAG, "Failed to send flash program data");
         return ESP_FAIL;
     }
 
-    ESP_LOGI(TAG, "Program download completed: %lu bytes", (unsigned long)program_size);
+    ESP_LOGI(TAG,
+             "Flash program download completed: %lu bytes",
+             (unsigned long)program_size);
     return ESP_OK;
 }
 
-// Program delete handler - DELETE /api/program
-static esp_err_t program_delete_handler(httpd_req_t *req) {
-    ESP_LOGI(TAG, "Program delete request received");
+// Flash program delete handler - DELETE /api/program/flash
+static esp_err_t flash_program_delete_handler(httpd_req_t *req) {
+    ESP_LOGI(TAG, "Flash program delete request received");
 
     // Check authentication
     if (check_api_key(req) != ESP_OK) {
         return ESP_FAIL;
     }
 
-    // Erase program from storage
-    if (!program_storage_erase()) {
-        ESP_LOGE(TAG, "Failed to erase program from storage");
+    // Erase flash program
+    if (!program_erase(PROGRAM_TYPE_FLASH)) {
+        ESP_LOGE(TAG, "Failed to erase flash program");
         httpd_resp_set_status(req, "500 Internal Server Error");
         httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(
-            req, "{\"error\":\"Failed to erase program\"}", HTTPD_RESP_USE_STRLEN);
+        httpd_resp_send(req,
+                        "{\"error\":\"Failed to erase flash program\"}",
+                        HTTPD_RESP_USE_STRLEN);
         return ESP_FAIL;
     }
 
-    ESP_LOGI(TAG, "Program deleted successfully");
+    ESP_LOGI(TAG, "Flash program deleted successfully");
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, "{\"success\":true}", HTTPD_RESP_USE_STRLEN);
+    return ESP_OK;
+}
+
+// Flash program execute handler - POST /api/program/flash/execute
+static esp_err_t flash_program_execute_handler(httpd_req_t *req) {
+    ESP_LOGI(TAG, "Flash program execute request received");
+
+    // Check authentication
+    if (check_api_key(req) != ESP_OK) {
+        return ESP_FAIL;
+    }
+
+    // Get flash program
+    uint32_t program_size;
+    const uint8_t *program_data = program_get(PROGRAM_TYPE_FLASH, &program_size);
+
+    if (program_data == NULL || program_size == 0) {
+        ESP_LOGW(TAG, "No flash program found");
+        httpd_resp_set_status(req, "404 Not Found");
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_send(
+            req, "{\"error\":\"No flash program found\"}", HTTPD_RESP_USE_STRLEN);
+        return ESP_FAIL;
+    }
+
+    // Halt any currently running program
+    if (!vm_task_halt()) {
+        ESP_LOGW(TAG, "Failed to halt current program");
+    }
+
+    // Start flash program execution
+    if (!vm_task_start_program(program_data, program_size)) {
+        ESP_LOGE(TAG, "Failed to start flash program execution");
+        httpd_resp_set_status(req, "500 Internal Server Error");
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_send(req,
+                        "{\"error\":\"Failed to start flash program execution\"}",
+                        HTTPD_RESP_USE_STRLEN);
+        return ESP_FAIL;
+    }
+
+    ESP_LOGI(
+        TAG, "Flash program execution started: %lu bytes", (unsigned long)program_size);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, "{\"success\":true}", HTTPD_RESP_USE_STRLEN);
+    return ESP_OK;
+}
+
+// RAM program upload handler - POST /api/program/ram
+static esp_err_t ram_program_upload_handler(httpd_req_t *req) {
+    ESP_LOGI(TAG, "RAM program upload request received");
+
+    // Check authentication
+    if (check_api_key(req) != ESP_OK) {
+        return ESP_FAIL;
+    }
+
+    // Get content length
+    size_t content_length = req->content_len;
+    if (content_length == 0) {
+        ESP_LOGE(TAG, "Missing Content-Length header");
+        httpd_resp_set_status(req, "400 Bad Request");
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_send(req,
+                        "{\"error\":\"Missing Content-Length header\"}",
+                        HTTPD_RESP_USE_STRLEN);
+        return ESP_FAIL;
+    }
+
+    if (content_length > PROGRAM_RAM_MAX_SIZE) {
+        ESP_LOGE(
+            TAG, "RAM program too large: %lu bytes", (unsigned long)content_length);
+        httpd_resp_set_status(req, "413 Payload Too Large");
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_send(
+            req, "{\"error\":\"RAM program too large\"}", HTTPD_RESP_USE_STRLEN);
+        return ESP_FAIL;
+    }
+
+    // Notify that program upload is starting (same as USB)
+    if (g_http_service_config.on_upload_start) {
+        if (!g_http_service_config.on_upload_start()) {
+            ESP_LOGW(TAG, "RAM program upload aborted by callback");
+            httpd_resp_set_status(req, "409 Conflict");
+            httpd_resp_set_type(req, "application/json");
+            httpd_resp_send(req,
+                            "{\"error\":\"RAM program upload aborted\"}",
+                            HTTPD_RESP_USE_STRLEN);
+            return ESP_FAIL;
+        }
+    }
+
+    // Start RAM program storage write session
+    if (!program_write_start(
+            PROGRAM_TYPE_RAM, content_length, PROGRAM_WRITE_SOURCE_HTTP)) {
+        ESP_LOGE(TAG, "Failed to start RAM program storage write session");
+        httpd_resp_set_status(req, "500 Internal Server Error");
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_send(req,
+                        "{\"error\":\"Failed to start RAM program storage\"}",
+                        HTTPD_RESP_USE_STRLEN);
+        return ESP_FAIL;
+    }
+
+    // Get session buffer for this connection
+    size_t buffer_size;
+    uint8_t *buffer = get_session_buffer(req, &buffer_size);
+    if (buffer == NULL) {
+        ESP_LOGE(TAG, "Failed to get session buffer");
+        httpd_resp_set_status(req, "500 Internal Server Error");
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_send(
+            req, "{\"error\":\"Internal server error\"}", HTTPD_RESP_USE_STRLEN);
+        return ESP_FAIL;
+    }
+
+    // Read and write program data in chunks
+    size_t bytes_remaining = content_length;
+
+    while (bytes_remaining > 0) {
+        size_t chunk_size =
+            (bytes_remaining > buffer_size) ? buffer_size : bytes_remaining;
+
+        // Read chunk from HTTP request
+        int ret = httpd_req_recv(req, (char *)buffer, chunk_size);
+        if (ret <= 0) {
+            ESP_LOGE(TAG, "Failed to receive data chunk");
+            httpd_resp_set_status(req, "500 Internal Server Error");
+            httpd_resp_set_type(req, "application/json");
+            httpd_resp_send(
+                req, "{\"error\":\"Failed to receive data\"}", HTTPD_RESP_USE_STRLEN);
+            return ESP_FAIL;
+        }
+
+        // Write chunk to RAM program storage
+        if (!program_write_chunk(
+                PROGRAM_TYPE_RAM, buffer, ret, PROGRAM_WRITE_SOURCE_HTTP)) {
+            ESP_LOGE(TAG, "Failed to write chunk to RAM program storage");
+            httpd_resp_set_status(req, "500 Internal Server Error");
+            httpd_resp_set_type(req, "application/json");
+            httpd_resp_send(req,
+                            "{\"error\":\"Failed to write to RAM program storage\"}",
+                            HTTPD_RESP_USE_STRLEN);
+            return ESP_FAIL;
+        }
+
+        bytes_remaining -= ret;
+    }
+
+    // Finish RAM program storage write session
+    if (!program_write_finish(
+            PROGRAM_TYPE_RAM, content_length, PROGRAM_WRITE_SOURCE_HTTP)) {
+        ESP_LOGE(TAG, "Failed to finish RAM program storage write session");
+        httpd_resp_set_status(req, "500 Internal Server Error");
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_send(req,
+                        "{\"error\":\"Failed to finish RAM program storage\"}",
+                        HTTPD_RESP_USE_STRLEN);
+        return ESP_FAIL;
+    }
+
+    ESP_LOGI(TAG,
+             "RAM program upload completed successfully: %lu bytes",
+             (unsigned long)content_length);
+    httpd_resp_set_type(req, "application/json");
+    char response[64];
+    snprintf(response,
+             sizeof(response),
+             "{\"success\":true,\"size\":%lu}",
+             (unsigned long)content_length);
+    httpd_resp_send(req, response, HTTPD_RESP_USE_STRLEN);
+    return ESP_OK;
+}
+
+// RAM program download handler - GET /api/program/ram
+static esp_err_t ram_program_download_handler(httpd_req_t *req) {
+    ESP_LOGI(TAG, "RAM program download request received");
+
+    // Check authentication
+    if (check_api_key(req) != ESP_OK) {
+        return ESP_FAIL;
+    }
+
+    // Get RAM program from storage
+    uint32_t program_size;
+    const uint8_t *program_data = program_get(PROGRAM_TYPE_RAM, &program_size);
+
+    if (program_data == NULL || program_size == 0) {
+        ESP_LOGW(TAG, "No RAM program stored");
+        httpd_resp_set_status(req, "404 Not Found");
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_send(
+            req, "{\"error\":\"No RAM program found\"}", HTTPD_RESP_USE_STRLEN);
+        return ESP_FAIL;
+    }
+
+    // Set headers for file download
+    httpd_resp_set_type(req, "application/octet-stream");
+    httpd_resp_set_hdr(
+        req, "Content-Disposition", "attachment; filename=\"ram_program.bin\"");
+    httpd_resp_set_hdr(req, "Content-Length", NULL);  // Will be set automatically
+
+    // Send program data
+    esp_err_t ret = httpd_resp_send(req, (const char *)program_data, program_size);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to send RAM program data");
+        return ESP_FAIL;
+    }
+
+    ESP_LOGI(
+        TAG, "RAM program download completed: %lu bytes", (unsigned long)program_size);
+    return ESP_OK;
+}
+
+// RAM program delete handler - DELETE /api/program/ram
+static esp_err_t ram_program_delete_handler(httpd_req_t *req) {
+    ESP_LOGI(TAG, "RAM program delete request received");
+
+    // Check authentication
+    if (check_api_key(req) != ESP_OK) {
+        return ESP_FAIL;
+    }
+
+    // Erase RAM program from storage
+    if (!program_erase(PROGRAM_TYPE_RAM)) {
+        ESP_LOGE(TAG, "Failed to erase RAM program from storage");
+        httpd_resp_set_status(req, "500 Internal Server Error");
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_send(
+            req, "{\"error\":\"Failed to erase RAM program\"}", HTTPD_RESP_USE_STRLEN);
+        return ESP_FAIL;
+    }
+
+    ESP_LOGI(TAG, "RAM program deleted successfully");
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, "{\"success\":true}", HTTPD_RESP_USE_STRLEN);
+    return ESP_OK;
+}
+
+// RAM program execute handler - POST /api/program/ram/execute
+static esp_err_t ram_program_execute_handler(httpd_req_t *req) {
+    ESP_LOGI(TAG, "RAM program execute request received");
+
+    // Check authentication
+    if (check_api_key(req) != ESP_OK) {
+        return ESP_FAIL;
+    }
+
+    // Get RAM program from storage
+    uint32_t program_size;
+    const uint8_t *program_data = program_get(PROGRAM_TYPE_RAM, &program_size);
+
+    if (program_data == NULL || program_size == 0) {
+        ESP_LOGW(TAG, "No RAM program stored");
+        httpd_resp_set_status(req, "404 Not Found");
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_send(
+            req, "{\"error\":\"No RAM program found\"}", HTTPD_RESP_USE_STRLEN);
+        return ESP_FAIL;
+    }
+
+    // Halt any currently running program
+    if (!vm_task_halt()) {
+        ESP_LOGW(TAG, "Failed to halt current program");
+    }
+
+    // Start RAM program execution
+    if (!vm_task_start_program(program_data, program_size)) {
+        ESP_LOGE(TAG, "Failed to start RAM program execution");
+        httpd_resp_set_status(req, "500 Internal Server Error");
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_send(req,
+                        "{\"error\":\"Failed to start RAM program execution\"}",
+                        HTTPD_RESP_USE_STRLEN);
+        return ESP_FAIL;
+    }
+
+    ESP_LOGI(
+        TAG, "RAM program execution started: %lu bytes", (unsigned long)program_size);
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, "{\"success\":true}", HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
@@ -949,24 +1239,55 @@ static esp_err_t start_http_service(void) {
         return err;
     }
 
-    // Program management endpoints
-    httpd_uri_t program_upload_uri = {.uri = "/api/program",
+    // Flash program management endpoints
+    httpd_uri_t program_upload_uri = {.uri = "/api/program/flash",
                                       .method = HTTP_POST,
-                                      .handler = program_upload_handler,
+                                      .handler = flash_program_upload_handler,
                                       .user_ctx = NULL};
     httpd_register_uri_handler(g_service, &program_upload_uri);
 
-    httpd_uri_t program_download_uri = {.uri = "/api/program",
+    httpd_uri_t program_download_uri = {.uri = "/api/program/flash",
                                         .method = HTTP_GET,
-                                        .handler = program_download_handler,
+                                        .handler = flash_program_download_handler,
                                         .user_ctx = NULL};
     httpd_register_uri_handler(g_service, &program_download_uri);
 
-    httpd_uri_t program_delete_uri = {.uri = "/api/program",
+    httpd_uri_t program_delete_uri = {.uri = "/api/program/flash",
                                       .method = HTTP_DELETE,
-                                      .handler = program_delete_handler,
+                                      .handler = flash_program_delete_handler,
                                       .user_ctx = NULL};
     httpd_register_uri_handler(g_service, &program_delete_uri);
+
+    httpd_uri_t flash_program_execute_uri = {.uri = "/api/program/flash/execute",
+                                             .method = HTTP_POST,
+                                             .handler = flash_program_execute_handler,
+                                             .user_ctx = NULL};
+    httpd_register_uri_handler(g_service, &flash_program_execute_uri);
+
+    // RAM program management endpoints
+    httpd_uri_t ram_program_upload_uri = {.uri = "/api/program/ram",
+                                          .method = HTTP_POST,
+                                          .handler = ram_program_upload_handler,
+                                          .user_ctx = NULL};
+    httpd_register_uri_handler(g_service, &ram_program_upload_uri);
+
+    httpd_uri_t ram_program_download_uri = {.uri = "/api/program/ram",
+                                            .method = HTTP_GET,
+                                            .handler = ram_program_download_handler,
+                                            .user_ctx = NULL};
+    httpd_register_uri_handler(g_service, &ram_program_download_uri);
+
+    httpd_uri_t ram_program_delete_uri = {.uri = "/api/program/ram",
+                                          .method = HTTP_DELETE,
+                                          .handler = ram_program_delete_handler,
+                                          .user_ctx = NULL};
+    httpd_register_uri_handler(g_service, &ram_program_delete_uri);
+
+    httpd_uri_t ram_program_execute_uri = {.uri = "/api/program/ram/execute",
+                                           .method = HTTP_POST,
+                                           .handler = ram_program_execute_handler,
+                                           .user_ctx = NULL};
+    httpd_register_uri_handler(g_service, &ram_program_execute_uri);
 
     // NVS management endpoints
     httpd_uri_t nvs_get_uri = {.uri = "/api/nvs/*",

@@ -7,7 +7,7 @@
 #include "http_service.h"
 #include "mdns_service.h"
 #include "nvs_odkey.h"
-#include "program_storage.h"
+#include "program.h"
 #include "usb_core.h"
 #include "usb_keyboard.h"
 #include "usb_system_config.h"
@@ -34,7 +34,7 @@ bool app_init(void) {
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
     // Initialize program storage
-    if (!program_storage_init()) {
+    if (!program_init()) {
         ESP_LOGE(TAG, "Failed to initialize program storage");
         return false;
     }
@@ -101,7 +101,7 @@ static void on_button_press(void) {
     if (!vm_task_is_running()) {
         // Load program from flash
         uint32_t program_size;
-        const uint8_t *program = program_storage_get(&program_size);
+        const uint8_t *program = program_get(PROGRAM_TYPE_FLASH, &program_size);
 
         if (program == NULL || program_size == 0) {
             ESP_LOGI(TAG, "No valid program in storage. Ignoring button press.");
