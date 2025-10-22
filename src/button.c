@@ -1,16 +1,16 @@
-#include "button_handler.h"
+#include "button.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/timers.h"
 
-static const char *TAG = "button_handler";
+static const char *TAG = "button";
 
 // Button handler state
 static struct {
     uint8_t gpio_pin;
     uint32_t debounce_ms;
-    button_callback_t callback;
+    button_callback_t on_press_cb;
     TimerHandle_t debounce_timer;
     bool interrupt_enabled;
 } g_button_state = {0};
@@ -36,8 +36,8 @@ static void debounce_timer_callback(TimerHandle_t xTimer) {
 
     if (level == 0) {  // Button still pressed
         // Invoke callback
-        if (g_button_state.callback != NULL) {
-            g_button_state.callback();
+        if (g_button_state.on_press_cb != NULL) {
+            g_button_state.on_press_cb();
         }
     }
 
@@ -46,11 +46,11 @@ static void debounce_timer_callback(TimerHandle_t xTimer) {
     g_button_state.interrupt_enabled = true;
 }
 
-bool button_handler_init(uint8_t gpio_pin,
-                         uint32_t debounce_ms,
-                         button_callback_t callback) {
-    if (callback == NULL) {
-        ESP_LOGE(TAG, "Callback cannot be NULL");
+bool button_init(uint8_t gpio_pin,
+                 uint32_t debounce_ms,
+                 button_callback_t on_press_cb) {
+    if (on_press_cb == NULL) {
+        ESP_LOGE(TAG, "on_press_cb cannot be NULL");
         return false;
     }
 
@@ -62,7 +62,7 @@ bool button_handler_init(uint8_t gpio_pin,
     // Store configuration
     g_button_state.gpio_pin = gpio_pin;
     g_button_state.debounce_ms = debounce_ms;
-    g_button_state.callback = callback;
+    g_button_state.on_press_cb = on_press_cb;
     g_button_state.interrupt_enabled = false;
 
     // Configure GPIO
@@ -114,7 +114,7 @@ bool button_handler_init(uint8_t gpio_pin,
     g_button_state.interrupt_enabled = true;
 
     ESP_LOGI(TAG,
-             "Button handler initialized on GPIO %d with %lu ms debounce",
+             "Button initialized on GPIO %d with %lu ms debounce",
              gpio_pin,
              (unsigned long)debounce_ms);
 

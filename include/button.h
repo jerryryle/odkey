@@ -1,5 +1,5 @@
-#ifndef BUTTON_HANDLER_H
-#define BUTTON_HANDLER_H
+#ifndef BUTTON_H
+#define BUTTON_H
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -14,18 +14,16 @@ extern "C" {
 typedef void (*button_callback_t)(void);
 
 /**
- * @brief Initialize the button handler module
+ * @brief Initialize the button module
  * @param gpio_pin GPIO pin number for the button
  * @param debounce_ms Debounce time in milliseconds
- * @param callback Function to call when button is pressed (debounced)
+ * @param on_press_cb Function to call when button is pressed and released
  * @return true on success, false on failure
  */
-bool button_handler_init(uint8_t gpio_pin,
-                         uint32_t debounce_ms,
-                         button_callback_t callback);
+bool button_init(uint8_t gpio_pin, uint32_t debounce_ms, button_callback_t on_press_cb);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif  // BUTTON_HANDLER_H
+#endif  // BUTTON_H

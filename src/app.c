@@ -1,5 +1,5 @@
 #include "app.h"
-#include "button_handler.h"
+#include "button.h"
 #include "esp_event.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -64,9 +64,9 @@ bool app_init(void) {
         return false;
     }
 
-    // Initialize button handler
-    if (!button_handler_init(BUTTON_GPIO, BUTTON_DEBOUNCE_MS, on_button_press)) {
-        ESP_LOGE(TAG, "Failed to initialize button handler");
+    // Initialize button
+    if (!button_init(BUTTON_GPIO, BUTTON_DEBOUNCE_MS, on_button_press)) {
+        ESP_LOGE(TAG, "Failed to initialize button");
         return false;
     }
 
