@@ -14,15 +14,6 @@ extern "C" {
     ((1024 * 1024) - PROGRAM_STORAGE_PAGE_SIZE)  // 1MB total minus reserved first page
 
 /**
- * @brief Program storage write state
- */
-typedef enum {
-    PROGRAM_STORAGE_STATE_IDLE,
-    PROGRAM_STORAGE_STATE_WRITING,
-    PROGRAM_STORAGE_STATE_ERROR
-} program_storage_write_state_t;
-
-/**
  * @brief Program storage write source
  */
 typedef enum {
@@ -75,12 +66,6 @@ bool program_storage_write_chunk(const uint8_t *data,
  */
 bool program_storage_write_finish(uint32_t program_size,
                                   program_storage_source_t source);
-
-/**
- * @brief Get current write state
- * @return Current write state
- */
-program_storage_write_state_t program_storage_get_write_state(void);
 
 /**
  * @brief Get number of bytes written so far

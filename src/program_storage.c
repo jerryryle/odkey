@@ -11,6 +11,15 @@ static const char *TAG = "program_storage";
 
 #define PROGRAM_STORAGE_PARTITION_LABEL "odkey_programs"
 
+/**
+ * @brief Program storage write state (private to this module)
+ */
+typedef enum {
+    PROGRAM_STORAGE_STATE_IDLE,
+    PROGRAM_STORAGE_STATE_WRITING,
+    PROGRAM_STORAGE_STATE_ERROR
+} program_storage_write_state_t;
+
 // Global partition handle
 static esp_partition_t const *g_program_partition = NULL;
 
@@ -135,7 +144,8 @@ bool program_storage_init(void) {
     return true;
 }
 
-const uint8_t *program_storage_get(uint32_t *out_size) {
+// Internal function to get program data (assumes mutex is held)
+static const uint8_t *program_storage_get_unsafe(uint32_t *out_size) {
     if (g_program_partition == NULL || g_mmap_data == NULL) {
         ESP_LOGE(TAG, "Program storage not initialized");
         if (out_size)
@@ -145,6 +155,15 @@ const uint8_t *program_storage_get(uint32_t *out_size) {
 
     if (out_size == NULL) {
         ESP_LOGE(TAG, "out_size parameter cannot be NULL");
+        return NULL;
+    }
+
+    // Check if we're currently in a write operation
+    if (g_write_state.state != PROGRAM_STORAGE_STATE_IDLE) {
+        ESP_LOGD(TAG,
+                 "Cannot get program while write operation is in progress (state: %d)",
+                 g_write_state.state);
+        *out_size = 0;
         return NULL;
     }
 
@@ -169,6 +188,27 @@ const uint8_t *program_storage_get(uint32_t *out_size) {
 
     // Return pointer to program data (skip the size header page)
     return data + PROGRAM_STORAGE_PAGE_SIZE;
+}
+
+const uint8_t *program_storage_get(uint32_t *out_size) {
+    if (g_write_state_mutex == NULL) {
+        ESP_LOGE(TAG, "Program storage not initialized");
+        if (out_size)
+            *out_size = 0;
+        return NULL;
+    }
+
+    // Lock mutex to protect shared state
+    if (xSemaphoreTake(g_write_state_mutex, portMAX_DELAY) != pdTRUE) {
+        ESP_LOGE(TAG, "Failed to take write state mutex");
+        if (out_size)
+            *out_size = 0;
+        return NULL;
+    }
+
+    const uint8_t *result = program_storage_get_unsafe(out_size);
+    xSemaphoreGive(g_write_state_mutex);
+    return result;
 }
 
 static bool program_storage_write_start_unsafe(uint32_t expected_program_size,
@@ -479,20 +519,6 @@ bool program_storage_erase(void) {
 
     ESP_LOGI(TAG, "Successfully erased program from storage");
     return true;
-}
-
-program_storage_write_state_t program_storage_get_write_state(void) {
-    if (g_write_state_mutex == NULL) {
-        return PROGRAM_STORAGE_STATE_ERROR;
-    }
-
-    if (xSemaphoreTake(g_write_state_mutex, portMAX_DELAY) != pdTRUE) {
-        return PROGRAM_STORAGE_STATE_ERROR;
-    }
-
-    program_storage_write_state_t state = g_write_state.state;
-    xSemaphoreGive(g_write_state_mutex);
-    return state;
 }
 
 uint32_t program_storage_get_bytes_written(void) {

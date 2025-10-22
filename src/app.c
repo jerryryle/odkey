@@ -19,36 +19,6 @@ static const char *TAG = "app";
 #define BUTTON_GPIO 5
 #define BUTTON_DEBOUNCE_MS 50
 
-// Comprehensive test program that exercises all VM opcodes:
-// 1. Press A (KEYDN/KEYUP)
-// 2. Repeat B keydn/keyup 3 times (SET_COUNTER, DEC, JNZ)
-// 3. Final C keydn followed by KEYUP_ALL
-// clang-format off
-static const uint8_t test_program[] = {
-    // 1. Press A
-    0x10, 0x00, 0x01, 0x04,  // KEYDN: modifier=0, keycount=1, key=KEY_A
-    0x13, 0x19, 0x00,        // WAIT: 25ms
-    0x11, 0x00, 0x01, 0x04,  // KEYUP: modifier=0, keycount=1, key=KEY_A
-    0x13, 0x19, 0x00,        // WAIT: 25ms
-    
-    // 2. Set up loop counter for 3 iterations
-    0x14, 0x00, 0x03, 0x00,  // SET_COUNTER: counter[0] = 3
-    
-    // Loop start (address 18):
-    0x10, 0x00, 0x01, 0x05,  // KEYDN: modifier=0, keycount=1, key=KEY_B
-    0x13, 0x19, 0x00,        // WAIT: 25ms
-    0x11, 0x00, 0x01, 0x05,  // KEYUP: modifier=0, keycount=1, key=KEY_B
-    0x13, 0x64, 0x00,        // WAIT: 100ms
-    0x15, 0x00,              // DEC: counter[0]
-    0x16, 0x12, 0x00, 0x00, 0x00, // JNZ: jump to address 18 if counter != 0
-    
-    // 3. Final C keydn followed by KEYUP_ALL
-    0x10, 0x00, 0x01, 0x06,  // KEYDN: modifier=0, keycount=1, key=KEY_C
-    0x13, 0x19, 0x00,        // WAIT: 25ms
-    0x12,                    // KEYUP_ALL: release all keys
-};
-// clang-format on
-
 // Callback declarations
 static void on_button_press(void);
 static bool on_program_upload_start(void);
@@ -133,16 +103,13 @@ static void on_button_press(void) {
         uint32_t program_size;
         const uint8_t *program = program_storage_get(&program_size);
 
-        // Fallback to test program if no program in flash
         if (program == NULL || program_size == 0) {
-            ESP_LOGI(TAG, "No program in storage, using built-in test program");
-            program = test_program;
-            program_size = sizeof(test_program);
-        } else {
-            ESP_LOGI(TAG,
-                     "Loaded program from storage (%lu bytes)",
-                     (unsigned long)program_size);
+            ESP_LOGI(TAG, "No valid program in storage. Ignoring button press.");
+            return;
         }
+        ESP_LOGI(TAG,
+                 "Loaded program from storage (%lu bytes)",
+                 (unsigned long)program_size);
 
         // Start program execution
         if (vm_task_start_program(program, program_size)) {
