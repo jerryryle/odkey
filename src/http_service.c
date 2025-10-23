@@ -8,7 +8,6 @@
 #include "mdns.h"
 #include "nvs_odkey.h"
 #include "program.h"
-#include "vm_task.h"
 #include "wifi.h"
 
 static const char *TAG = "http_service";
@@ -25,7 +24,6 @@ static const char *TAG = "http_service";
 struct http_service_config_t {
     uint16_t service_port;
     char api_key[64];
-    program_upload_start_callback_t on_upload_start;
 } g_http_service_config = {0};
 
 // HTTP service handle
@@ -213,19 +211,6 @@ static esp_err_t flash_program_upload_handler(httpd_req_t *req) {
         return ESP_FAIL;
     }
 
-    // Notify that program upload is starting (same as USB)
-    if (g_http_service_config.on_upload_start) {
-        if (!g_http_service_config.on_upload_start()) {
-            ESP_LOGW(TAG, "Flash program upload aborted by callback");
-            httpd_resp_set_status(req, "409 Conflict");
-            httpd_resp_set_type(req, "application/json");
-            httpd_resp_send(req,
-                            "{\"error\":\"Flash program upload aborted\"}",
-                            HTTPD_RESP_USE_STRLEN);
-            return ESP_FAIL;
-        }
-    }
-
     // Start program storage write session
     if (!program_write_start(
             PROGRAM_TYPE_FLASH, content_length, PROGRAM_WRITE_SOURCE_HTTP)) {
@@ -383,37 +368,16 @@ static esp_err_t flash_program_execute_handler(httpd_req_t *req) {
         return ESP_FAIL;
     }
 
-    // Get flash program
-    uint32_t program_size;
-    const uint8_t *program_data = program_get(PROGRAM_TYPE_FLASH, &program_size);
-
-    if (program_data == NULL || program_size == 0) {
-        ESP_LOGW(TAG, "No flash program found");
-        httpd_resp_set_status(req, "404 Not Found");
-        httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(
-            req, "{\"error\":\"No flash program found\"}", HTTPD_RESP_USE_STRLEN);
-        return ESP_FAIL;
-    }
-
-    // Halt any currently running program
-    if (!vm_task_halt()) {
-        ESP_LOGW(TAG, "Failed to halt current program");
-    }
-
-    // Start flash program execution
-    if (!vm_task_start_program(program_data, program_size)) {
-        ESP_LOGE(TAG, "Failed to start flash program execution");
-        httpd_resp_set_status(req, "500 Internal Server Error");
+    if (!program_execute(PROGRAM_TYPE_FLASH)) {
+        ESP_LOGW(TAG, "Flash program execution failed");
+        httpd_resp_set_status(req, "422 Unprocessable Entity");
         httpd_resp_set_type(req, "application/json");
         httpd_resp_send(req,
-                        "{\"error\":\"Failed to start flash program execution\"}",
+                        "{\"error\":\"Flash program cannot be executed\"}",
                         HTTPD_RESP_USE_STRLEN);
         return ESP_FAIL;
     }
-
-    ESP_LOGI(
-        TAG, "Flash program execution started: %lu bytes", (unsigned long)program_size);
+    ESP_LOGI(TAG, "Flash program execution started");
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, "{\"success\":true}", HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
@@ -448,19 +412,6 @@ static esp_err_t ram_program_upload_handler(httpd_req_t *req) {
         httpd_resp_send(
             req, "{\"error\":\"RAM program too large\"}", HTTPD_RESP_USE_STRLEN);
         return ESP_FAIL;
-    }
-
-    // Notify that program upload is starting (same as USB)
-    if (g_http_service_config.on_upload_start) {
-        if (!g_http_service_config.on_upload_start()) {
-            ESP_LOGW(TAG, "RAM program upload aborted by callback");
-            httpd_resp_set_status(req, "409 Conflict");
-            httpd_resp_set_type(req, "application/json");
-            httpd_resp_send(req,
-                            "{\"error\":\"RAM program upload aborted\"}",
-                            HTTPD_RESP_USE_STRLEN);
-            return ESP_FAIL;
-        }
     }
 
     // Start RAM program storage write session
@@ -619,37 +570,17 @@ static esp_err_t ram_program_execute_handler(httpd_req_t *req) {
         return ESP_FAIL;
     }
 
-    // Get RAM program from storage
-    uint32_t program_size;
-    const uint8_t *program_data = program_get(PROGRAM_TYPE_RAM, &program_size);
-
-    if (program_data == NULL || program_size == 0) {
-        ESP_LOGW(TAG, "No RAM program stored");
-        httpd_resp_set_status(req, "404 Not Found");
-        httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(
-            req, "{\"error\":\"No RAM program found\"}", HTTPD_RESP_USE_STRLEN);
-        return ESP_FAIL;
-    }
-
-    // Halt any currently running program
-    if (!vm_task_halt()) {
-        ESP_LOGW(TAG, "Failed to halt current program");
-    }
-
-    // Start RAM program execution
-    if (!vm_task_start_program(program_data, program_size)) {
-        ESP_LOGE(TAG, "Failed to start RAM program execution");
-        httpd_resp_set_status(req, "500 Internal Server Error");
+    if (!program_execute(PROGRAM_TYPE_RAM)) {
+        ESP_LOGW(TAG, "RAM program execution failed");
+        httpd_resp_set_status(req, "422 Unprocessable Entity");
         httpd_resp_set_type(req, "application/json");
         httpd_resp_send(req,
-                        "{\"error\":\"Failed to start RAM program execution\"}",
+                        "{\"error\":\"RAM program cannot be executed\"}",
                         HTTPD_RESP_USE_STRLEN);
         return ESP_FAIL;
     }
 
-    ESP_LOGI(
-        TAG, "RAM program execution started: %lu bytes", (unsigned long)program_size);
+    ESP_LOGI(TAG, "RAM program execution started");
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, "{\"success\":true}", HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
@@ -1120,10 +1051,7 @@ static void http_service_wifi_event_handler(void *arg,
     }
 }
 
-bool http_service_init(program_upload_start_callback_t on_upload_start) {
-    // Store callback
-    g_http_service_config.on_upload_start = on_upload_start;
-
+bool http_service_init(void) {
     // Load configuration
     if (!load_http_service_configuration(&g_http_service_config)) {
         ESP_LOGE(TAG, "Failed to load HTTP service configuration");

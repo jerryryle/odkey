@@ -10,19 +10,11 @@ extern "C" {
 #endif
 
 /**
- * @brief Callback function type for handling program upload start events
- * @return true to allow upload to proceed, false to abort upload
- */
-typedef bool (*program_upload_start_callback_t)(void);
-
-/**
  * @brief Initialize the program upload module
  * @param interface_num USB HID interface number to use for Raw HID reports
- * @param on_upload_start Callback called when program upload starts (can be NULL)
  * @return true on success, false on failure
  */
-bool usb_system_config_init(uint8_t interface_num,
-                            program_upload_start_callback_t on_upload_start);
+bool usb_system_config_init(uint8_t interface_num);
 
 /**
  * @brief Process incoming command from host

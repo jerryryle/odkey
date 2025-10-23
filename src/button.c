@@ -3,14 +3,13 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/timers.h"
+#include "program.h"
 
 static const char *TAG = "button";
 
-// Button handler state
 static struct {
     uint8_t gpio_pin;
     uint32_t debounce_ms;
-    button_callback_t on_press_cb;
     TimerHandle_t debounce_timer;
     bool interrupt_enabled;
 } g_button_state = {0};
@@ -35,9 +34,9 @@ static void debounce_timer_callback(TimerHandle_t xTimer) {
     int level = gpio_get_level(g_button_state.gpio_pin);
 
     if (level == 0) {  // Button still pressed
-        // Invoke callback
-        if (g_button_state.on_press_cb != NULL) {
-            g_button_state.on_press_cb();
+        // Execute flash program
+        if (!program_execute(PROGRAM_TYPE_FLASH)) {
+            ESP_LOGW(TAG, "Failed to execute flash program");
         }
     }
 
@@ -46,14 +45,7 @@ static void debounce_timer_callback(TimerHandle_t xTimer) {
     g_button_state.interrupt_enabled = true;
 }
 
-bool button_init(uint8_t gpio_pin,
-                 uint32_t debounce_ms,
-                 button_callback_t on_press_cb) {
-    if (on_press_cb == NULL) {
-        ESP_LOGE(TAG, "on_press_cb cannot be NULL");
-        return false;
-    }
-
+bool button_init(uint8_t gpio_pin, uint32_t debounce_ms) {
     if (debounce_ms == 0) {
         ESP_LOGE(TAG, "Debounce time must be greater than 0");
         return false;
@@ -62,7 +54,6 @@ bool button_init(uint8_t gpio_pin,
     // Store configuration
     g_button_state.gpio_pin = gpio_pin;
     g_button_state.debounce_ms = debounce_ms;
-    g_button_state.on_press_cb = on_press_cb;
     g_button_state.interrupt_enabled = false;
 
     // Configure GPIO

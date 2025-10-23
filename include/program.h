@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include "vm_task.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -29,10 +30,11 @@ typedef enum {
 } program_write_source_t;
 
 /**
- * @brief Initialize program
+ * @brief Initialize program storage and VM task
+ * @param hid_send_callback Callback for VM to send HID keyboard reports
  * @return true on success, false on failure
  */
-bool program_init(void);
+bool program_init(vm_hid_send_callback_t hid_send_callback);
 
 /**
  * @brief Get pointer to program
@@ -100,6 +102,25 @@ uint32_t program_get_expected_size(program_type_t type);
  * @return true on success, false on failure
  */
 bool program_erase(program_type_t type);
+
+/**
+ * @brief Execute a program from storage
+ * @param type Program type (FLASH or RAM)
+ * @return true if program started, false if no program, already running, or error
+ */
+bool program_execute(program_type_t type);
+
+/**
+ * @brief Check if a program is currently running
+ * @return true if running, false if idle
+ */
+bool program_is_running(void);
+
+/**
+ * @brief Halt the currently running program
+ * @return true if halted successfully, false if not running or error
+ */
+bool program_halt(void);
 
 #ifdef __cplusplus
 }

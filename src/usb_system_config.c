@@ -5,7 +5,6 @@
 #include "nvs_flash.h"
 #include "program.h"
 #include "tinyusb.h"
-#include "vm_task.h"
 
 static const char *TAG = "usb_system_config";
 
@@ -52,7 +51,6 @@ static struct {
     size_t program_bytes_read;
     const uint8_t *program_data;
     uint8_t interface_num;
-    program_upload_start_callback_t on_upload_start;
 
     // NVS transfer state
     uint8_t nvs_value_type;
@@ -72,16 +70,13 @@ static void reset_nvs_transfer_buffer(void) {
     g_transfer_state.nvs_transfer_buffer_transferred = 0;
 }
 
-bool usb_system_config_init(uint8_t interface_num,
-                            program_upload_start_callback_t on_upload_start) {
+bool usb_system_config_init(uint8_t interface_num) {
     // Reset transfer state
     g_transfer_state.state = TRANSFER_STATE_IDLE;
     g_transfer_state.total_program_size = 0;
     g_transfer_state.program_bytes_read = 0;
     g_transfer_state.program_data = NULL;
     g_transfer_state.interface_num = interface_num;
-    g_transfer_state.on_upload_start = on_upload_start;
-
     // Reset NVS state
     g_transfer_state.nvs_value_type = 0;
     memset(g_transfer_state.nvs_key, 0, sizeof(g_transfer_state.nvs_key));
@@ -152,14 +147,7 @@ static void handle_flash_program_write_start(uint32_t program_size) {
     }
 
     // Notify that program upload is starting
-    if (g_transfer_state.on_upload_start) {
-        ESP_LOGI(TAG, "Program upload starting - notifying callback");
-        if (!g_transfer_state.on_upload_start()) {
-            ESP_LOGW(TAG, "Program upload aborted by callback");
-            send_response(RESP_ERROR);
-            return;
-        }
-    }
+    ESP_LOGI(TAG, "FLASH program upload starting");
 
     // Start program storage write session
     if (!program_write_start(
@@ -334,30 +322,12 @@ static void handle_program_read_chunk(void) {
 
 // Handle CMD_FLASH_PROGRAM_EXECUTE command
 static void handle_flash_program_execute(void) {
-    // Get flash program from storage
-    uint32_t program_size;
-    const uint8_t *program_data = program_get(PROGRAM_TYPE_FLASH, &program_size);
-
-    if (program_data == NULL || program_size == 0) {
-        ESP_LOGE(TAG, "No flash program stored");
+    if (!program_execute(PROGRAM_TYPE_FLASH)) {
+        ESP_LOGW(TAG, "FLASH program execution failed");
         send_response(RESP_ERROR);
         return;
     }
-
-    // Halt any currently running program
-    if (!vm_task_halt()) {
-        ESP_LOGW(TAG, "Failed to halt current program");
-    }
-
-    // Start flash program execution
-    if (!vm_task_start_program(program_data, program_size)) {
-        ESP_LOGE(TAG, "Failed to start flash program execution");
-        send_response(RESP_ERROR);
-        return;
-    }
-
-    ESP_LOGI(
-        TAG, "Flash program execution started: %lu bytes", (unsigned long)program_size);
+    ESP_LOGI(TAG, "FLASH program execution started");
     send_response(RESP_OK);
 }
 
@@ -370,14 +340,7 @@ static void handle_ram_program_write_start(uint32_t program_size) {
     }
 
     // Notify that program upload is starting
-    if (g_transfer_state.on_upload_start) {
-        ESP_LOGI(TAG, "RAM program upload starting - notifying callback");
-        if (!g_transfer_state.on_upload_start()) {
-            ESP_LOGW(TAG, "RAM program upload aborted by callback");
-            send_response(RESP_ERROR);
-            return;
-        }
-    }
+    ESP_LOGI(TAG, "RAM program upload starting");
 
     // Start RAM program storage write session
     if (!program_write_start(
@@ -472,30 +435,12 @@ static void handle_ram_program_write_finish(uint32_t program_size) {
 
 // Handle CMD_RAM_PROGRAM_EXECUTE command
 static void handle_ram_program_execute(void) {
-    // Get RAM program from storage
-    uint32_t program_size;
-    const uint8_t *program_data = program_get(PROGRAM_TYPE_RAM, &program_size);
-
-    if (program_data == NULL || program_size == 0) {
-        ESP_LOGE(TAG, "No RAM program stored");
+    if (!program_execute(PROGRAM_TYPE_RAM)) {
+        ESP_LOGW(TAG, "RAM program execution failed");
         send_response(RESP_ERROR);
         return;
     }
-
-    // Halt any currently running program
-    if (!vm_task_halt()) {
-        ESP_LOGW(TAG, "Failed to halt current program");
-    }
-
-    // Start RAM program execution
-    if (!vm_task_start_program(program_data, program_size)) {
-        ESP_LOGE(TAG, "Failed to start RAM program execution");
-        send_response(RESP_ERROR);
-        return;
-    }
-
-    ESP_LOGI(
-        TAG, "RAM program execution started: %lu bytes", (unsigned long)program_size);
+    ESP_LOGI(TAG, "RAM program execution started");
     send_response(RESP_OK);
 }
 

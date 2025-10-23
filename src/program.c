@@ -2,10 +2,11 @@
 #include "esp_log.h"
 #include "program_flash.h"
 #include "program_ram.h"
+#include "vm_task.h"
 
 static const char *TAG = "program";
 
-bool program_init(void) {
+bool program_init(vm_hid_send_callback_t hid_send_callback) {
     // Initialize flash program
     if (!program_flash_init()) {
         ESP_LOGE(TAG, "Failed to initialize flash program");
@@ -15,6 +16,12 @@ bool program_init(void) {
     // Initialize RAM program
     if (!program_ram_init()) {
         ESP_LOGE(TAG, "Failed to initialize RAM program");
+        return false;
+    }
+
+    // Initialize VM task
+    if (!vm_task_init(hid_send_callback)) {
+        ESP_LOGE(TAG, "Failed to initialize VM task");
         return false;
     }
 
@@ -45,6 +52,12 @@ const uint8_t *program_get(program_type_t type, uint32_t *out_size) {
 bool program_write_start(program_type_t type,
                          uint32_t expected_program_size,
                          program_write_source_t source) {
+    // Auto-halt VM if running
+    if (vm_task_is_running()) {
+        ESP_LOGI(TAG, "Halting VM for program upload");
+        vm_task_halt();
+    }
+
     switch (type) {
     case PROGRAM_TYPE_FLASH:
         return program_flash_write_start(expected_program_size, source);
@@ -131,4 +144,39 @@ uint32_t program_get_expected_size(program_type_t type) {
         ESP_LOGE(TAG, "Invalid program type: %d", type);
         return 0;
     }
+}
+
+bool program_execute(program_type_t type) {
+    if (vm_task_is_running()) {
+        ESP_LOGE(TAG, "Program already running");
+        return false;
+    }
+
+    // Load program from storage
+    uint32_t program_size;
+    const uint8_t *program = program_get(type, &program_size);
+
+    if (program == NULL || program_size == 0) {
+        ESP_LOGI(TAG, "No valid program in storage for type %d", type);
+        return false;
+    }
+
+    ESP_LOGI(TAG, "Loaded program (%lu bytes)", (unsigned long)program_size);
+
+    // Start program execution
+    if (!vm_task_start_program(program, program_size)) {
+        ESP_LOGW(TAG, "Failed to start program execution");
+        return false;
+    }
+
+    ESP_LOGI(TAG, "Program execution started");
+    return true;
+}
+
+bool program_is_running(void) {
+    return vm_task_is_running();
+}
+
+bool program_halt(void) {
+    return vm_task_halt();
 }
