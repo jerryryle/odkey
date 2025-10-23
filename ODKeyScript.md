@@ -25,7 +25,7 @@ press A # Longer press of enter
 ```
 
 ### interkey_time
-The `interkey_time` command sets the time, in milliseconds between the last key up and the next key down for sequence commands such as `type`. This can be set more than once within a script and it applies to all relevant commands that come after it. Note that very short interkey times may be unreliable, depending upon the OS and application. ODKey defaults the interkey time to 30ms.
+The `interkey_time` command sets the time, in milliseconds between the last key up and the next key down for sequence commands such as `type`. It also automatically adds a delay after `press`. This can be set more than once within a script and it applies to all relevant commands that come after it. Note that very short interkey times may be unreliable, depending upon the OS and application. ODKey defaults the interkey time to 30ms.
 Example:
 ```
 press_time 50
@@ -67,7 +67,7 @@ keyup # release all keys
 ```
 
 ### press
-The `press` command presses and releases a single key, with any number of optional modifiers. The keypress time can be changed with the `press_time` command. 
+The `press` command presses and releases a single key, with any number of optional modifiers. The keypress time can be changed with the `press_time` command and the delay after release can be changed with the `interkey_time` command.
 Example:
 ```
 press M_LEFTSHIFT A

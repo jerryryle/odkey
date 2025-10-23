@@ -612,7 +612,7 @@ class Compiler:
                 0,
             )
 
-        # Emit KEYDN + WAIT + KEYUP sequence
+        # Emit KEYDN + WAIT + KEYUP + WAIT sequence
         self.bytecode.append(Opcode.KEYDN.value)
         self.bytecode.append(modifiers)
         self.bytecode.append(len(keys))
@@ -625,6 +625,9 @@ class Compiler:
         self.bytecode.append(modifiers)
         self.bytecode.append(len(keys))
         self.bytecode.extend(keys)
+
+        self.bytecode.append(Opcode.WAIT.value)
+        self.bytecode.extend(self._uint16_to_bytes(self.current_interkey_time))
 
     def _compile_type(self, lexer: Lexer) -> None:
         """Compile type command"""
