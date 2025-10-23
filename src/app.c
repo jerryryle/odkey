@@ -26,12 +26,12 @@ bool app_init(void) {
         return false;
     }
 
-    // Initialize event loop (moved from wifi.c)
+    // Initialize event loop
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
-    // Initialize program storage and VM task
+    // Initialize program
     if (!program_init(usb_keyboard_send_keys)) {
-        ESP_LOGE(TAG, "Failed to initialize program storage and VM task");
+        ESP_LOGE(TAG, "Failed to initialize program");
         return false;
     }
 
