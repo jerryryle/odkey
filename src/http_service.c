@@ -368,7 +368,7 @@ static esp_err_t flash_program_execute_handler(httpd_req_t *req) {
         return ESP_FAIL;
     }
 
-    if (!program_execute(PROGRAM_TYPE_FLASH)) {
+    if (!program_execute(PROGRAM_TYPE_FLASH, NULL, NULL)) {
         ESP_LOGW(TAG, "Flash program execution failed");
         httpd_resp_set_status(req, "422 Unprocessable Entity");
         httpd_resp_set_type(req, "application/json");
@@ -570,7 +570,7 @@ static esp_err_t ram_program_execute_handler(httpd_req_t *req) {
         return ESP_FAIL;
     }
 
-    if (!program_execute(PROGRAM_TYPE_RAM)) {
+    if (!program_execute(PROGRAM_TYPE_RAM, NULL, NULL)) {
         ESP_LOGW(TAG, "RAM program execution failed");
         httpd_resp_set_status(req, "422 Unprocessable Entity");
         httpd_resp_set_type(req, "application/json");

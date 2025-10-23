@@ -18,6 +18,7 @@ static const char *TAG = "app";
 
 #define BUTTON_GPIO 5
 #define BUTTON_DEBOUNCE_MS 50
+#define BUTTON_REPEAT_DELAY_MS 225
 
 bool app_init(void) {
     // Initialize NVS ODKey module
@@ -54,7 +55,7 @@ bool app_init(void) {
     }
 
     // Initialize button
-    if (!button_init(BUTTON_GPIO, BUTTON_DEBOUNCE_MS)) {
+    if (!button_init(BUTTON_GPIO, BUTTON_DEBOUNCE_MS, BUTTON_REPEAT_DELAY_MS)) {
         ESP_LOGE(TAG, "Failed to initialize button");
         return false;
     }

@@ -322,7 +322,7 @@ static void handle_program_read_chunk(void) {
 
 // Handle CMD_FLASH_PROGRAM_EXECUTE command
 static void handle_flash_program_execute(void) {
-    if (!program_execute(PROGRAM_TYPE_FLASH)) {
+    if (!program_execute(PROGRAM_TYPE_FLASH, NULL, NULL)) {
         ESP_LOGW(TAG, "FLASH program execution failed");
         send_response(RESP_ERROR);
         return;
@@ -435,7 +435,7 @@ static void handle_ram_program_write_finish(uint32_t program_size) {
 
 // Handle CMD_RAM_PROGRAM_EXECUTE command
 static void handle_ram_program_execute(void) {
-    if (!program_execute(PROGRAM_TYPE_RAM)) {
+    if (!program_execute(PROGRAM_TYPE_RAM, NULL, NULL)) {
         ESP_LOGW(TAG, "RAM program execution failed");
         send_response(RESP_ERROR);
         return;

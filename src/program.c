@@ -146,7 +146,9 @@ uint32_t program_get_expected_size(program_type_t type) {
     }
 }
 
-bool program_execute(program_type_t type) {
+bool program_execute(program_type_t type,
+                     program_execution_complete_callback_t on_complete,
+                     void *on_complete_arg) {
     if (vm_task_is_running()) {
         ESP_LOGE(TAG, "Program already running");
         return false;
@@ -163,8 +165,8 @@ bool program_execute(program_type_t type) {
 
     ESP_LOGI(TAG, "Loaded program (%lu bytes)", (unsigned long)program_size);
 
-    // Start program execution
-    if (!vm_task_start_program(program, program_size)) {
+    // Start program execution with completion callback
+    if (!vm_task_start_program(program, program_size, on_complete, on_complete_arg)) {
         ESP_LOGW(TAG, "Failed to start program execution");
         return false;
     }

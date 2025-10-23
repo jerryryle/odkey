@@ -10,6 +10,12 @@
 extern "C" {
 #endif
 
+/**
+ * @brief Callback function type for program execution completion
+ * @param arg Optional argument passed to the callback
+ */
+typedef void (*program_execution_complete_callback_t)(void *arg);
+
 #define PROGRAM_FLASH_PAGE_SIZE 4096  // Flash page size in bytes
 #define PROGRAM_FLASH_MAX_SIZE \
     ((1024 * 1024) - PROGRAM_FLASH_PAGE_SIZE)  // Flash program max size in bytes
@@ -106,9 +112,13 @@ bool program_erase(program_type_t type);
 /**
  * @brief Execute a program from storage
  * @param type Program type (FLASH or RAM)
+ * @param on_complete Optional callback invoked when program execution completes
+ * @param on_complete_arg Optional argument passed to the completion callback
  * @return true if program started, false if no program, already running, or error
  */
-bool program_execute(program_type_t type);
+bool program_execute(program_type_t type,
+                     program_execution_complete_callback_t on_complete,
+                     void *on_complete_arg);
 
 /**
  * @brief Check if a program is currently running

@@ -18,6 +18,8 @@ typedef enum { VM_TASK_STATE_IDLE, VM_TASK_STATE_RUNNING } vm_task_state_t;
 typedef struct {
     const uint8_t *program;
     uint32_t program_size;
+    vm_execution_complete_callback_t completion_callback;
+    void *completion_callback_arg;
 } vm_program_request_t;
 
 // Global state
@@ -122,6 +124,10 @@ static void vm_task_function(void *pvParameters) {
         }
 
         set_task_state(VM_TASK_STATE_IDLE);
+        // Invoke completion callback
+        if (request.completion_callback != NULL) {
+            request.completion_callback(request.completion_callback_arg);
+        }
     }
 }
 
@@ -180,7 +186,10 @@ bool vm_task_init(vm_hid_send_callback_t hid_send_callback) {
     return true;
 }
 
-bool vm_task_start_program(const uint8_t *program, uint32_t program_size) {
+bool vm_task_start_program(const uint8_t *program,
+                           uint32_t program_size,
+                           vm_execution_complete_callback_t completion_callback,
+                           void *completion_callback_arg) {
     if (g_vm_task_handle == NULL) {
         ESP_LOGE(TAG, "VM task not initialized");
         return false;
@@ -198,7 +207,10 @@ bool vm_task_start_program(const uint8_t *program, uint32_t program_size) {
     }
 
     // Prepare request
-    vm_program_request_t request = {.program = program, .program_size = program_size};
+    vm_program_request_t request = {.program = program,
+                                    .program_size = program_size,
+                                    .completion_callback = completion_callback,
+                                    .completion_callback_arg = completion_callback_arg};
 
     // Send request to queue (non-blocking)
     BaseType_t ret = xQueueSend(g_program_queue, &request, 0);
