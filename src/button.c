@@ -3,9 +3,14 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/timers.h"
+#include "nvs.h"
+#include "nvs_odkey.h"
 #include "program.h"
 
 static const char *TAG = "button";
+
+#define BUTTON_DEFAULT_DEBOUNCE_MS 50
+#define BUTTON_DEFAULT_REPEAT_DELAY_MS 225
 
 // Forward declarations
 static void program_completion_callback(void *arg);
@@ -84,7 +89,46 @@ static void program_completion_callback(void *arg) {
     }
 }
 
-bool button_init(uint8_t gpio_pin, uint32_t debounce_ms, uint32_t repeat_delay_ms) {
+bool button_init(uint8_t gpio_pin) {
+    // Read configuration from NVS with defaults
+    nvs_handle_t nvs_handle;
+    esp_err_t ret = nvs_open(NVS_NAMESPACE, NVS_READONLY, &nvs_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to open NVS: %s", esp_err_to_name(ret));
+        return false;
+    }
+
+    // Read debounce delay with default
+    uint32_t debounce_ms = BUTTON_DEFAULT_DEBOUNCE_MS;
+    size_t required_size = sizeof(debounce_ms);
+    ret = nvs_get_blob(
+        nvs_handle, NVS_KEY_BUTTON_DEBOUNCE_MS, &debounce_ms, &required_size);
+    if (ret == ESP_ERR_NVS_NOT_FOUND) {
+        ESP_LOGD(TAG,
+                 "Button debounce not found in NVS, using default %lu ms",
+                 (unsigned long)debounce_ms);
+    } else if (ret != ESP_OK) {
+        ESP_LOGW(
+            TAG, "Failed to read button debounce from NVS: %s", esp_err_to_name(ret));
+    }
+
+    // Read repeat delay with default
+    uint32_t repeat_delay_ms = BUTTON_DEFAULT_REPEAT_DELAY_MS;
+    required_size = sizeof(repeat_delay_ms);
+    ret = nvs_get_blob(
+        nvs_handle, NVS_KEY_BUTTON_REPEAT_DELAY_MS, &repeat_delay_ms, &required_size);
+    if (ret == ESP_ERR_NVS_NOT_FOUND) {
+        ESP_LOGD(TAG,
+                 "Button repeat delay not found in NVS, using default %lu ms",
+                 (unsigned long)repeat_delay_ms);
+    } else if (ret != ESP_OK) {
+        ESP_LOGW(TAG,
+                 "Failed to read button repeat delay from NVS: %s",
+                 esp_err_to_name(ret));
+    }
+
+    nvs_close(nvs_handle);
+
     if (debounce_ms == 0) {
         ESP_LOGE(TAG, "Debounce time must be greater than 0");
         return false;
@@ -110,7 +154,7 @@ bool button_init(uint8_t gpio_pin, uint32_t debounce_ms, uint32_t repeat_delay_m
         .intr_type = GPIO_INTR_NEGEDGE,  // Falling edge (button press)
     };
 
-    esp_err_t ret = gpio_config(&io_conf);
+    ret = gpio_config(&io_conf);
     if (ret != ESP_OK) {
         ESP_LOGE(
             TAG, "Failed to configure GPIO %d: %s", gpio_pin, esp_err_to_name(ret));
