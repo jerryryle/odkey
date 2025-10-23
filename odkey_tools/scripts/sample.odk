@@ -3,6 +3,8 @@
 
 # Set press time to 50ms
 press_time 50
+# Set interkey time to 50ms
+interkey_time 50
 
 # Type a greeting
 type "Hello, World!"

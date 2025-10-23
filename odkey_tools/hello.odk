@@ -1,7 +1,0 @@
-# ODKeyScript Sample
-
-press_time 10
-interkey_time 10
-
-# Type a greeting
-type "Hello, World!"
