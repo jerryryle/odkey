@@ -13,6 +13,8 @@
 
 static const char *TAG = "usb_core";
 
+#define TINYUSB_TASK_PRIORITY 7
+
 #define RAW_HID_REPORT_SIZE 64  // 64 bytes for full flash alignment
 
 /************* TinyUSB descriptors ****************/
@@ -170,6 +172,9 @@ static void device_event_handler(tinyusb_event_t *event, void *arg) {
 bool usb_core_init(void) {
     // Initialize TinyUSB with default configuration
     tinyusb_config_t tusb_cfg = TINYUSB_DEFAULT_CONFIG(device_event_handler);
+
+    // Override TinyUSB task priority to be higher than keyboard task
+    tusb_cfg.task.priority = TINYUSB_TASK_PRIORITY;
 
     // Override specific descriptor fields
     tusb_cfg.descriptor.device = NULL;  // Use default device descriptor
