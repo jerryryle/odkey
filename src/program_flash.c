@@ -347,6 +347,15 @@ static bool program_flash_write_chunk_unsafe(const uint8_t *data,
     const uint8_t *data_ptr = data;
 
     while (bytes_remaining > 0) {
+        // Validate buffer offset before calculation
+        if (g_write_state.buffer_offset >= PROGRAM_FLASH_PAGE_SIZE) {
+            ESP_LOGE(TAG,
+                     "Buffer offset out of bounds: %lu",
+                     (unsigned long)g_write_state.buffer_offset);
+            g_write_state.state = PROGRAM_STORAGE_STATE_ERROR;
+            return false;
+        }
+
         // Calculate how many bytes we can copy to the buffer
         uint32_t buffer_space = PROGRAM_FLASH_PAGE_SIZE - g_write_state.buffer_offset;
         uint32_t bytes_to_copy =
