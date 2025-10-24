@@ -73,7 +73,8 @@ static void program_completion_callback(void *arg) {
         ESP_LOGI(TAG,
                  "Button still pressed, starting restart timer (%lu ms)",
                  (unsigned long)g_button_state.repeat_delay_ms);
-        // Reconfigure timer period for restart delay
+        // Stop timer, reconfigure period for restart delay, then start
+        xTimerStop(g_button_state.button_timer, 0);
         xTimerChangePeriod(g_button_state.button_timer,
                            pdMS_TO_TICKS(g_button_state.repeat_delay_ms),
                            0);
