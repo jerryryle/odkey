@@ -55,7 +55,7 @@ NVS_TYPE_U32 = 0x04
 NVS_TYPE_I32 = 0x14
 NVS_TYPE_U64 = 0x08
 NVS_TYPE_I64 = 0x18
-NVS_TYPE_STRING = 0x21
+NVS_TYPE_STR = 0x21
 NVS_TYPE_BLOB = 0x42
 
 # Type name to byte mapping
@@ -68,7 +68,7 @@ TYPE_TO_BYTE = {
     "i32": NVS_TYPE_I32,
     "u64": NVS_TYPE_U64,
     "i64": NVS_TYPE_I64,
-    "string": NVS_TYPE_STRING,
+    "string": NVS_TYPE_STR,
     "blob": NVS_TYPE_BLOB,
 }
 
@@ -482,7 +482,7 @@ class ODKeyConfigUsb:
 
         # Send SET_START command
         start_data = bytearray(25)  # type(1) + length(4) + key(16) + padding(4)
-        start_data[0] = NVS_TYPE_STRING
+        start_data[0] = NVS_TYPE_STR
         start_data[1:5] = struct.pack("<I", len(value_bytes))
         start_data[5 : 5 + len(key)] = key.encode("utf-8")
 

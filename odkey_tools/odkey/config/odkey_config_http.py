@@ -25,7 +25,7 @@ NVS_TYPE_U32 = 0x04
 NVS_TYPE_I32 = 0x14
 NVS_TYPE_U64 = 0x08
 NVS_TYPE_I64 = 0x18
-NVS_TYPE_STRING = 0x21
+NVS_TYPE_STR = 0x21
 NVS_TYPE_BLOB = 0x42
 
 # Type name to byte mapping
@@ -38,7 +38,7 @@ TYPE_TO_BYTE = {
     "i32": NVS_TYPE_I32,
     "u64": NVS_TYPE_U64,
     "i64": NVS_TYPE_I64,
-    "string": NVS_TYPE_STRING,
+    "string": NVS_TYPE_STR,
     "blob": NVS_TYPE_BLOB,
 }
 
@@ -104,8 +104,10 @@ class ODKeyConfigHttp:
             if target not in ["flash", "ram"]:
                 print(f"Error: Invalid target '{target}'")
                 return False
-            
-            print(f"Uploading program to {target.upper()} on {self.host}:{self.port}...")
+
+            print(
+                f"Uploading program to {target.upper()} on {self.host}:{self.port}..."
+            )
 
             response = self.session.post(
                 f"{self.base_url}/api/program/{target}",
@@ -142,10 +144,14 @@ class ODKeyConfigHttp:
             if target not in ["flash", "ram"]:
                 print(f"Error: Invalid target '{target}'")
                 return None
-            
-            print(f"Downloading {target.upper()} program from {self.host}:{self.port}...")
 
-            response = self.session.get(f"{self.base_url}/api/program/{target}", timeout=30)
+            print(
+                f"Downloading {target.upper()} program from {self.host}:{self.port}..."
+            )
+
+            response = self.session.get(
+                f"{self.base_url}/api/program/{target}", timeout=30
+            )
 
             if response.status_code == 200:
                 print(
@@ -175,7 +181,9 @@ class ODKeyConfigHttp:
         try:
             print(f"Deleting program from {self.host}:{self.port}...")
 
-            response = self.session.delete(f"{self.base_url}/api/program/flash", timeout=30)
+            response = self.session.delete(
+                f"{self.base_url}/api/program/flash", timeout=30
+            )
 
             if response.status_code == 200:
                 print("Program deleted successfully")
@@ -308,10 +316,10 @@ class ODKeyConfigHttp:
     def execute_program(self, target: str = "flash") -> bool:
         """
         Execute a program on the device
-        
+
         Args:
             target: Program target ("flash" or "ram")
-        
+
         Returns:
             True if execution successful, False otherwise
         """
@@ -320,10 +328,10 @@ class ODKeyConfigHttp:
             if target not in ["flash", "ram"]:
                 print(f"Error: Invalid target '{target}'")
                 return False
-            
+
             endpoint = f"/api/program/{target}/execute"
             response = self.session.post(f"{self.base_url}{endpoint}", timeout=30)
-            
+
             if response.status_code == 200:
                 print(f"{target.upper()} program execution started")
                 return True
