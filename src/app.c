@@ -70,13 +70,11 @@ bool app_init(void) {
         // Initialize HTTP service module
         if (!http_service_init()) {
             ESP_LOGE(TAG, "Failed to initialize HTTP service");
-            return false;
         }
 
         // Start WiFi connection
         if (!wifi_start()) {
             ESP_LOGE(TAG, "Failed to start WiFi");
-            return false;
         }
     }
 
