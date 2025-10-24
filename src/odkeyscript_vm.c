@@ -243,7 +243,7 @@ vm_error_t vm_step(vm_context_t *ctx) {
         }
 
         if (key_count > VM_MAX_KEYS_PRESSED) {
-            ctx->error = VM_ERROR_INVALID_ADDRESS;
+            ctx->error = VM_ERROR_INVALID_OPERAND;
             ctx->state = VM_STATE_ERROR;
             break;
         }
