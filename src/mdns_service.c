@@ -38,7 +38,8 @@ bool mdns_service_init(void) {
         ESP_LOGI(TAG, "Found mDNS hostname in NVS: %s", hostname);
     } else {
         ESP_LOGI(TAG, "mDNS hostname not found in NVS, using default");
-        strcpy(hostname, MDNS_HOSTNAME_DEFAULT);
+        strncpy(hostname, MDNS_HOSTNAME_DEFAULT, sizeof(hostname) - 1);
+        hostname[sizeof(hostname) - 1] = '\0';
     }
 
     // Try to get mDNS instance name
@@ -49,7 +50,8 @@ bool mdns_service_init(void) {
         ESP_LOGI(TAG, "Found mDNS instance in NVS: %s", instance);
     } else {
         ESP_LOGI(TAG, "mDNS instance not found in NVS, using default");
-        strcpy(instance, MDNS_INSTANCE_DEFAULT);
+        strncpy(instance, MDNS_INSTANCE_DEFAULT, sizeof(instance) - 1);
+        instance[sizeof(instance) - 1] = '\0';
     }
 
     nvs_close(nvs_handle);
