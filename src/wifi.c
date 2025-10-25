@@ -18,10 +18,6 @@ struct wifi_config_t {
     char password[64];
 } g_wifi_config = {0};
 
-// WiFi state
-static char g_ip_address[16] = {0};
-static bool g_wifi_connected = false;
-
 // WiFi event handler
 static void wifi_event_handler(void *arg,
                                esp_event_base_t event_base,
@@ -36,15 +32,12 @@ static void wifi_event_handler(void *arg,
         ESP_LOGW(TAG,
                  "WiFi disconnected (reason: %d), attempting to reconnect...",
                  disconnected->reason);
-        g_wifi_connected = false;
         // ESP-IDF handles both initial connection failures and disconnections with this
         // event
         esp_wifi_connect();
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
-        snprintf(g_ip_address, sizeof(g_ip_address), IPSTR, IP2STR(&event->ip_info.ip));
-        ESP_LOGI(TAG, "Got IP: %s", g_ip_address);
-        g_wifi_connected = true;
+        ESP_LOGI(TAG, "Got IP: %d.%d.%d.%d", IP2STR(&event->ip_info.ip));
     }
 }
 
@@ -173,12 +166,4 @@ bool wifi_start(void) {
     ESP_LOGI(TAG, "WiFi started, will attempt to connect to %s", g_wifi_config.ssid);
     started = true;
     return true;
-}
-
-bool wifi_is_connected(void) {
-    return g_wifi_connected;
-}
-
-const char *wifi_get_ip_address(void) {
-    return g_wifi_connected ? g_ip_address : "";
 }

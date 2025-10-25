@@ -21,18 +21,6 @@ bool wifi_init(void);
  */
 bool wifi_start(void);
 
-/**
- * @brief Check if WiFi is connected
- * @return true if connected, false otherwise
- */
-bool wifi_is_connected(void);
-
-/**
- * @brief Get the current IP address as a string
- * @return IP address string, or empty string if not connected
- */
-const char *wifi_get_ip_address(void);
-
 #ifdef __cplusplus
 }
 #endif
