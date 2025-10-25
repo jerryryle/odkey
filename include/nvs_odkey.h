@@ -16,7 +16,6 @@ extern "C" {
 // WiFi Configuration
 #define NVS_KEY_WIFI_SSID "wifi_ssid"
 #define NVS_KEY_WIFI_PASSWORD "wifi_pw"
-#define NVS_KEY_WIFI_CONNECT_TIMEOUT "wifi_timeout"
 
 // Http Service Configuration
 #define NVS_KEY_HTTP_SERVER_PORT "http_port"

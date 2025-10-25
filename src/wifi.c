@@ -16,7 +16,6 @@ static const char *TAG = "wifi";
 struct wifi_config_t {
     char ssid[32];
     char password[64];
-    uint32_t connect_timeout_ms;
 } g_wifi_config = {0};
 
 // WiFi state
@@ -83,16 +82,6 @@ static bool load_wifi_configuration(struct wifi_config_t *config) {
     } else {
         ESP_LOGI(TAG, "Password not found in NVS, using default");
         strcpy(config->password, WIFI_PASSWORD_DEFAULT);
-    }
-
-    // Try to get connect timeout
-    err = nvs_get_u32(
-        nvs_handle, NVS_KEY_WIFI_CONNECT_TIMEOUT, &config->connect_timeout_ms);
-    if (err == ESP_OK) {
-        ESP_LOGI(TAG, "Found connect timeout in NVS: %lu", config->connect_timeout_ms);
-    } else {
-        ESP_LOGI(TAG, "Connect timeout not found in NVS, using default");
-        config->connect_timeout_ms = WIFI_CONNECT_TIMEOUT_DEFAULT;
     }
 
     nvs_close(nvs_handle);
