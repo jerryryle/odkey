@@ -4,11 +4,21 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include "vm_task.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/**
+ * @brief Callback function type for sending HID keyboard reports.
+ * @param modifier Modifier key to send (or 0 to release all modifiers)
+ * @param keys Array of keycodes to send (can be NULL to release all keys)
+ * @param count Number of keycodes in the array (0-6, more than 6 will be truncated)
+ * @return true on success, false on failure
+ */
+typedef bool (*program_hid_send_callback_t)(uint8_t modifier,
+                                            const uint8_t *keys,
+                                            uint8_t count);
 
 /**
  * @brief Callback function type for program execution completion
@@ -40,7 +50,7 @@ typedef enum {
  * @param hid_send_callback Callback for VM to send HID keyboard reports
  * @return true on success, false on failure
  */
-bool program_init(vm_hid_send_callback_t hid_send_callback);
+bool program_init(program_hid_send_callback_t hid_send_callback);
 
 /**
  * @brief Get pointer to program

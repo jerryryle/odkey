@@ -6,7 +6,23 @@
 
 static const char *TAG = "program";
 
-bool program_init(vm_hid_send_callback_t hid_send_callback) {
+// Store the external HID callback
+static program_hid_send_callback_t g_external_hid_callback = NULL;
+
+// Private callback that forwards to the external callback
+static bool program_hid_send_callback(uint8_t modifier,
+                                      const uint8_t *keys,
+                                      uint8_t count) {
+    if (g_external_hid_callback != NULL) {
+        return g_external_hid_callback(modifier, keys, count);
+    }
+    return false;
+}
+
+bool program_init(program_hid_send_callback_t hid_send_callback) {
+    // Store the external callback
+    g_external_hid_callback = hid_send_callback;
+
     // Initialize flash program
     if (!program_flash_init()) {
         ESP_LOGE(TAG, "Failed to initialize flash program");
@@ -19,8 +35,8 @@ bool program_init(vm_hid_send_callback_t hid_send_callback) {
         return false;
     }
 
-    // Initialize VM task
-    if (!vm_task_init(hid_send_callback)) {
+    // Initialize VM task with our private callback
+    if (!vm_task_init(program_hid_send_callback)) {
         ESP_LOGE(TAG, "Failed to initialize VM task");
         return false;
     }
