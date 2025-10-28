@@ -1,5 +1,6 @@
 #include "usb_system_config.h"
 #include <string.h>
+#include "buffer_utils.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -98,12 +99,6 @@ bool usb_system_config_init(uint8_t interface_num) {
     ESP_LOGI(
         TAG, "System configuration module initialized on interface %d", interface_num);
     return true;
-}
-
-// Helper function to extract 32-bit value from data
-static uint32_t extract_u32(const uint8_t *data) {
-    return (uint32_t)data[0] | ((uint32_t)data[1] << 8) | ((uint32_t)data[2] << 16) |
-           ((uint32_t)data[3] << 24);
 }
 
 static void send_response(uint8_t response_id) {
@@ -490,7 +485,12 @@ static void handle_ram_program_read_start(void) {
 static void handle_nvs_set_start(const uint8_t *data) {
     // Parse command data: type(1) + length(4) + key(16) = 21 bytes
     uint8_t value_type = data[4];
-    uint32_t value_length = extract_u32(&data[5]);
+    uint32_t value_length;
+    if (!bu_read_u32_le(&data[5], 4, &value_length)) {
+        ESP_LOGE(TAG, "Failed to read value length");
+        send_response(RESP_ERROR);
+        return;
+    }
 
     // Copy key (null-terminated, max 15 chars)
     strncpy(g_transfer_state.nvs_key, (const char *)&data[9], 15);
@@ -663,12 +663,26 @@ static void handle_nvs_set_finish(void) {
         err = nvs_set_i16(nvs_handle, g_transfer_state.nvs_key, value);
     } break;
     case NVS_TYPE_U32: {
-        uint32_t value = extract_u32(g_transfer_state.nvs_transfer_buffer);
-        err = nvs_set_u32(nvs_handle, g_transfer_state.nvs_key, value);
+        uint32_t value;
+        if (!bu_read_u32_le(g_transfer_state.nvs_transfer_buffer,
+                            NVS_TRANSFER_BUFFER_SIZE,
+                            &value)) {
+            ESP_LOGE(TAG, "Failed to read u32 value");
+            err = ESP_FAIL;
+        } else {
+            err = nvs_set_u32(nvs_handle, g_transfer_state.nvs_key, value);
+        }
     } break;
     case NVS_TYPE_I32: {
-        int32_t value = (int32_t)extract_u32(g_transfer_state.nvs_transfer_buffer);
-        err = nvs_set_i32(nvs_handle, g_transfer_state.nvs_key, value);
+        uint32_t value;
+        if (!bu_read_u32_le(g_transfer_state.nvs_transfer_buffer,
+                            NVS_TRANSFER_BUFFER_SIZE,
+                            &value)) {
+            ESP_LOGE(TAG, "Failed to read i32 value");
+            err = ESP_FAIL;
+        } else {
+            err = nvs_set_i32(nvs_handle, g_transfer_state.nvs_key, (int32_t)value);
+        }
     } break;
     case NVS_TYPE_U64: {
         uint64_t value = (uint64_t)g_transfer_state.nvs_transfer_buffer[0] |
@@ -682,10 +696,18 @@ static void handle_nvs_set_finish(void) {
         err = nvs_set_u64(nvs_handle, g_transfer_state.nvs_key, value);
     } break;
     case NVS_TYPE_I64: {
-        int64_t value =
-            (int64_t)extract_u32(g_transfer_state.nvs_transfer_buffer) |
-            ((int64_t)extract_u32(&g_transfer_state.nvs_transfer_buffer[4]) << 32);
-        err = nvs_set_i64(nvs_handle, g_transfer_state.nvs_key, value);
+        uint32_t low, high;
+        if (!bu_read_u32_le(
+                g_transfer_state.nvs_transfer_buffer, NVS_TRANSFER_BUFFER_SIZE, &low) ||
+            !bu_read_u32_le(&g_transfer_state.nvs_transfer_buffer[4],
+                            NVS_TRANSFER_BUFFER_SIZE - 4,
+                            &high)) {
+            ESP_LOGE(TAG, "Failed to read i64 value");
+            err = ESP_FAIL;
+        } else {
+            int64_t value = (int64_t)low | ((int64_t)high << 32);
+            err = nvs_set_i64(nvs_handle, g_transfer_state.nvs_key, value);
+        }
     } break;
     case NVS_TYPE_STR:
         err = nvs_set_str(nvs_handle,
@@ -1060,8 +1082,12 @@ void usb_system_config_process_command(const uint8_t *data, uint16_t len) {
             send_response(RESP_ERROR);
             return;
         } else {
-            uint32_t program_size =
-                extract_u32(&data[4]);  // Program size is in bytes 4-7
+            uint32_t program_size;
+            if (!bu_read_u32_le(&data[4], len - 4, &program_size)) {
+                ESP_LOGE(TAG, "Failed to read program size");
+                send_response(RESP_ERROR);
+                return;
+            }
             handle_flash_program_write_start(program_size);
         }
         break;
@@ -1085,8 +1111,12 @@ void usb_system_config_process_command(const uint8_t *data, uint16_t len) {
             send_response(RESP_ERROR);
             return;
         } else {
-            uint32_t program_size =
-                extract_u32(&data[4]);  // Program size is in bytes 4-7
+            uint32_t program_size;
+            if (!bu_read_u32_le(&data[4], len - 4, &program_size)) {
+                ESP_LOGE(TAG, "Failed to read program size");
+                send_response(RESP_ERROR);
+                return;
+            }
             handle_flash_program_write_finish(program_size);
         }
         break;
@@ -1110,8 +1140,12 @@ void usb_system_config_process_command(const uint8_t *data, uint16_t len) {
             send_response(RESP_ERROR);
             return;
         } else {
-            uint32_t program_size =
-                extract_u32(&data[4]);  // Program size is in bytes 4-7
+            uint32_t program_size;
+            if (!bu_read_u32_le(&data[4], len - 4, &program_size)) {
+                ESP_LOGE(TAG, "Failed to read program size");
+                send_response(RESP_ERROR);
+                return;
+            }
             handle_ram_program_write_start(program_size);
         }
         break;
@@ -1136,8 +1170,12 @@ void usb_system_config_process_command(const uint8_t *data, uint16_t len) {
             send_response(RESP_ERROR);
             return;
         } else {
-            uint32_t program_size =
-                extract_u32(&data[4]);  // Program size is in bytes 4-7
+            uint32_t program_size;
+            if (!bu_read_u32_le(&data[4], len - 4, &program_size)) {
+                ESP_LOGE(TAG, "Failed to read program size");
+                send_response(RESP_ERROR);
+                return;
+            }
             handle_ram_program_write_finish(program_size);
         }
         break;

@@ -1,5 +1,6 @@
 #include "odkeyscript_vm.h"
 #include <string.h>
+#include "buffer_utils.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -35,52 +36,51 @@ static void vm_sleep_ms(vm_context_t *ctx, uint16_t ms) {
     }
 }
 
-// Helper function to read 8-bit value from program memory with bounds checking
-static bool vm_read_u8(vm_context_t *ctx, uint8_t *value) {
-    if (ctx->pc >= ctx->program_size) {
+// Helper function to clear the zero flag (called by all opcodes except DEC)
+static void vm_clear_zero_flag(vm_context_t *ctx) {
+    ctx->zero_flag = false;
+}
+
+// Helper functions for VM context-aware buffer operations
+static bool vm_read_u8(vm_context_t *ctx, uint8_t *out) {
+    if (!bu_read_u8(&ctx->program[ctx->pc], ctx->program_size - ctx->pc, out)) {
+        ctx->error = VM_ERROR_INVALID_ADDRESS;
+        ctx->state = VM_STATE_ERROR;
         return false;
     }
-    *value = ctx->program[ctx->pc++];
+    ctx->pc += 1;
     return true;
 }
 
-// Helper function to read 16-bit value from program memory with bounds checking
-static bool vm_read_u16(vm_context_t *ctx, uint16_t *value) {
-    if (ctx->pc + 1 >= ctx->program_size) {
+static bool vm_read_u16_le(vm_context_t *ctx, uint16_t *out) {
+    if (!bu_read_u16_le(&ctx->program[ctx->pc], ctx->program_size - ctx->pc, out)) {
+        ctx->error = VM_ERROR_INVALID_ADDRESS;
+        ctx->state = VM_STATE_ERROR;
         return false;
     }
-    *value =
-        (uint16_t)ctx->program[ctx->pc] | ((uint16_t)ctx->program[ctx->pc + 1] << 8);
     ctx->pc += 2;
     return true;
 }
 
-// Helper function to read 32-bit value from program memory with bounds checking
-static bool vm_read_u32(vm_context_t *ctx, uint32_t *value) {
-    if (ctx->pc + 3 >= ctx->program_size) {
+static bool vm_read_u32_le(vm_context_t *ctx, uint32_t *out) {
+    if (!bu_read_u32_le(&ctx->program[ctx->pc], ctx->program_size - ctx->pc, out)) {
+        ctx->error = VM_ERROR_INVALID_ADDRESS;
+        ctx->state = VM_STATE_ERROR;
         return false;
     }
-    *value = (uint32_t)ctx->program[ctx->pc] |
-             ((uint32_t)ctx->program[ctx->pc + 1] << 8) |
-             ((uint32_t)ctx->program[ctx->pc + 2] << 16) |
-             ((uint32_t)ctx->program[ctx->pc + 3] << 24);
     ctx->pc += 4;
     return true;
 }
 
-// Helper function to read array of bytes from program memory with bounds checking
-static bool vm_read_bytes(vm_context_t *ctx, uint8_t *buffer, size_t count) {
-    if (ctx->pc + count > ctx->program_size) {
+static bool vm_read_bytes(vm_context_t *ctx, uint8_t *dst, size_t count) {
+    if (!bu_read_bytes(
+            &ctx->program[ctx->pc], ctx->program_size - ctx->pc, dst, count)) {
+        ctx->error = VM_ERROR_INVALID_ADDRESS;
+        ctx->state = VM_STATE_ERROR;
         return false;
     }
-    memcpy(buffer, &ctx->program[ctx->pc], count);
     ctx->pc += count;
     return true;
-}
-
-// Helper function to clear the zero flag (called by all opcodes except DEC)
-static void vm_clear_zero_flag(vm_context_t *ctx) {
-    ctx->zero_flag = false;
 }
 
 // Helper function to release all currently pressed keys
@@ -188,9 +188,11 @@ vm_error_t vm_step(vm_context_t *ctx) {
     case OPCODE_KEYDN: {
         // KEYDN modifier keycount key1 key2 ... keyN
         uint8_t modifier, key_count;
-        if (!vm_read_u8(ctx, &modifier) || !vm_read_u8(ctx, &key_count)) {
-            ctx->error = VM_ERROR_INVALID_ADDRESS;
-            ctx->state = VM_STATE_ERROR;
+        if (!vm_read_u8(ctx, &modifier)) {
+            break;
+        }
+
+        if (!vm_read_u8(ctx, &key_count)) {
             break;
         }
 
@@ -203,8 +205,6 @@ vm_error_t vm_step(vm_context_t *ctx) {
         // Read keycodes
         uint8_t keys[VM_MAX_KEYS_PRESSED];
         if (!vm_read_bytes(ctx, keys, key_count)) {
-            ctx->error = VM_ERROR_INVALID_ADDRESS;
-            ctx->state = VM_STATE_ERROR;
             break;
         }
 
@@ -236,9 +236,11 @@ vm_error_t vm_step(vm_context_t *ctx) {
     case OPCODE_KEYUP: {
         // KEYUP modifier keycount key1 key2 ... keyN
         uint8_t modifier, key_count;
-        if (!vm_read_u8(ctx, &modifier) || !vm_read_u8(ctx, &key_count)) {
-            ctx->error = VM_ERROR_INVALID_ADDRESS;
-            ctx->state = VM_STATE_ERROR;
+        if (!vm_read_u8(ctx, &modifier)) {
+            break;
+        }
+
+        if (!vm_read_u8(ctx, &key_count)) {
             break;
         }
 
@@ -251,8 +253,6 @@ vm_error_t vm_step(vm_context_t *ctx) {
         // Read keycodes
         uint8_t keys[VM_MAX_KEYS_PRESSED];
         if (!vm_read_bytes(ctx, keys, key_count)) {
-            ctx->error = VM_ERROR_INVALID_ADDRESS;
-            ctx->state = VM_STATE_ERROR;
             break;
         }
 
@@ -310,9 +310,7 @@ vm_error_t vm_step(vm_context_t *ctx) {
     case OPCODE_WAIT: {
         // WAIT time_ms
         uint16_t time_ms;
-        if (!vm_read_u16(ctx, &time_ms)) {
-            ctx->error = VM_ERROR_INVALID_ADDRESS;
-            ctx->state = VM_STATE_ERROR;
+        if (!vm_read_u16_le(ctx, &time_ms)) {
             break;
         }
 
@@ -326,9 +324,11 @@ vm_error_t vm_step(vm_context_t *ctx) {
         // SET_COUNTER counter_id value
         uint8_t counter_id;
         uint16_t value;
-        if (!vm_read_u8(ctx, &counter_id) || !vm_read_u16(ctx, &value)) {
-            ctx->error = VM_ERROR_INVALID_ADDRESS;
-            ctx->state = VM_STATE_ERROR;
+        if (!vm_read_u8(ctx, &counter_id)) {
+            break;
+        }
+
+        if (!vm_read_u16_le(ctx, &value)) {
             break;
         }
 
@@ -348,8 +348,6 @@ vm_error_t vm_step(vm_context_t *ctx) {
         // DEC counter_id
         uint8_t counter_id;
         if (!vm_read_u8(ctx, &counter_id)) {
-            ctx->error = VM_ERROR_INVALID_ADDRESS;
-            ctx->state = VM_STATE_ERROR;
             break;
         }
 
@@ -376,9 +374,7 @@ vm_error_t vm_step(vm_context_t *ctx) {
     case OPCODE_JNZ: {
         // JNZ address - jump if zero flag is NOT set
         uint32_t address;
-        if (!vm_read_u32(ctx, &address)) {
-            ctx->error = VM_ERROR_INVALID_ADDRESS;
-            ctx->state = VM_STATE_ERROR;
+        if (!vm_read_u32_le(ctx, &address)) {
             break;
         }
 
