@@ -95,18 +95,20 @@ class ODKeyUploadError(Exception):
 class ODKeyConfigUsb:
     """ODKey USB system configuration interface using Raw HID"""
 
-    def __init__(self, device_path: Optional[str] = None):
+    def __init__(self, device_path: Optional[str] = None, vid: int = USB_VID, pid: int = USB_PID):
         """
         Initialize the ODKey configuration interface
 
         Args:
             device_path: Optional path to specific HID device
+            vid: USB Vendor ID (default: USB_VID)
+            pid: USB Product ID (default: USB_PID)
         """
         self.device: Optional[Any] = None
         self.device_path = device_path
         self.interface_num = 1  # Raw HID interface (Interface 1 in firmware)
-        self.usb_vid = USB_VID
-        self.usb_pid = USB_PID
+        self.usb_vid = vid
+        self.usb_pid = pid
 
     def find_device(self) -> bool:
         """

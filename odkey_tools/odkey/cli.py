@@ -17,6 +17,136 @@ from .odkeyscript.odkeyscript_compiler import CompileError, Compiler
 from .odkeyscript.odkeyscript_disassembler import disassemble
 
 
+# Helper functions
+def create_config(args: Any) -> Union[ODKeyConfigUsb, ODKeyConfigHttp]:
+    """Create and configure the appropriate config object"""
+    if args.interface == "http":
+        return ODKeyConfigHttp(args.host, args.port, args.api_key)
+    else:  # usb
+        return ODKeyConfigUsb(args.device_path, args.vid, args.pid)
+
+
+def add_device_args(parser: argparse.ArgumentParser) -> None:
+    """Add common device connection arguments"""
+    parser.add_argument(
+        "--vid",
+        type=lambda x: int(x, 0),
+        default=0x303A,
+        help="USB Vendor ID (default: 0x303A)",
+    )
+    parser.add_argument(
+        "--pid",
+        type=lambda x: int(x, 0),
+        default=0x4008,
+        help="USB Product ID (default: 0x4008)",
+    )
+    parser.add_argument("--device-path", help="Specific HID device path to use")
+    parser.add_argument(
+        "--interface",
+        "-i",
+        choices=["usb", "http"],
+        default="usb",
+        help="Communication interface (default: usb)",
+    )
+    parser.add_argument(
+        "--host",
+        default="odkey.local",
+        help="Device hostname or IP address (default: odkey.local, for http interface)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=80,
+        help="HTTP port (default: 80, for http interface)",
+    )
+    parser.add_argument(
+        "--api-key", help="API key for authentication (for http interface)"
+    )
+
+
+def add_target_args(parser: argparse.ArgumentParser, default: str = "ram") -> None:
+    """Add target selection arguments"""
+    parser.add_argument(
+        "--target",
+        choices=["ram", "flash"],
+        default=default,
+        help=f"Program target (default: {default})",
+    )
+
+
+def load_program_data(input_path: Path) -> bytes:
+    """Load program data from .odk or .bin file"""
+    if input_path.suffix.lower() == ".odk":
+        print(f"Compiling ODKeyScript source: {input_path}")
+        try:
+            with open(input_path, "r", encoding="utf-8") as f:
+                source = f.read()
+
+            compiler = Compiler()
+            program_data = compiler.compile(source)
+            print(f"Compiled to {len(program_data)} bytes")
+            return program_data
+
+        except CompileError as e:
+            print(f"Compilation error at line {e.line}, column {e.column}: {e.message}")
+            raise
+        except Exception as e:
+            print(f"Compilation failed: {e}")
+            raise
+    elif input_path.suffix.lower() == ".bin":
+        print(f"Loading pre-compiled bytecode: {input_path}")
+        try:
+            with open(input_path, "rb") as f:
+                program_data = f.read()
+            print(f"Loaded {len(program_data)} bytes")
+            return program_data
+        except Exception as e:
+            print(f"Error loading bytecode: {e}")
+            raise
+    else:
+        print(f"Error: Unsupported file type '{input_path.suffix}'")
+        print("Supported types: .odk (ODKeyScript source), .bin (compiled bytecode)")
+        raise ValueError(f"Unsupported file type: {input_path.suffix}")
+
+
+def parse_nvs_value(value: str, value_type: str, file_path: Path | None = None) -> str | int | bytes:
+    """Parse NVS value based on type"""
+    if value_type == "string":
+        return value
+    elif value_type in ["u8", "i8", "u16", "i16", "u32", "i32", "u64", "i64"]:
+        try:
+            return int(value)
+        except ValueError:
+            raise ValueError(f"'{value}' is not a valid integer")
+    elif value_type == "blob":
+        if file_path:
+            try:
+                with open(file_path, "rb") as f:
+                    return f.read()
+            except Exception as e:
+                raise Exception(f"Error reading file: {e}")
+        else:
+            try:
+                return bytes.fromhex(value)
+            except ValueError:
+                raise ValueError(f"'{value}' is not valid hex data")
+    else:
+        raise ValueError(f"Invalid type '{value_type}'")
+
+
+def check_program_size(program_data: bytes, target: str) -> None:
+    """Check if program size is within limits for the target"""
+    if target == "ram":
+        max_size = 8 * 1024  # 8KB
+    else:  # flash
+        max_size = 1024 * 1024  # 1MB
+
+    if len(program_data) > max_size:
+        print(f"Error: Program too large for {target} ({len(program_data)} bytes)")
+        print(f"Maximum size for {target}: {max_size} bytes")
+        raise ValueError(f"Program too large for {target}")
+
+
 def compile_command(args: Any) -> int:
     """Handle the compile command"""
     try:
@@ -58,96 +188,46 @@ def disassemble_command(args: Any) -> int:
 
 def upload_command(args: Any) -> int:
     """Handle the upload command"""
-    # Determine if we need to compile
-    if args.input.suffix.lower() == ".odk":
-        print(f"Compiling ODKeyScript source: {args.input}")
-        try:
-            with open(args.input, "r", encoding="utf-8") as f:
-                source = f.read()
-
-            compiler = Compiler()
-            program_data = compiler.compile(source)
-            print(f"Compiled to {len(program_data)} bytes")
-
-        except CompileError as e:
-            print(f"Compilation error at line {e.line}, column {e.column}: {e.message}")
-            return 1
-        except Exception as e:
-            print(f"Compilation failed: {e}")
-            return 1
-    elif args.input.suffix.lower() == ".bin":
-        print(f"Loading pre-compiled bytecode: {args.input}")
-        try:
-            with open(args.input, "rb") as f:
-                program_data = f.read()
-            print(f"Loaded {len(program_data)} bytes")
-        except Exception as e:
-            print(f"Error loading bytecode: {e}")
-            return 1
-    else:
-        print(f"Error: Unsupported file type '{args.input.suffix}'")
-        print("Supported types: .odk (ODKeyScript source), .bin (compiled bytecode)")
-        return 1
-
-    # Check program size based on target
-    if args.target == "ram":
-        max_size = 8 * 1024  # 8KB
-    else:  # flash
-        max_size = 1024 * 1024  # 1MB
-
-    if len(program_data) > max_size:
-        print(f"Error: Program too large for {args.target} ({len(program_data)} bytes)")
-        print(f"Maximum size for {args.target}: {max_size} bytes")
-        return 1
-
-    # Select interface and upload to device
-    if args.interface == "http":
-        config: Union[ODKeyConfigUsb, ODKeyConfigHttp] = ODKeyConfigHttp(
-            args.host, args.port, args.api_key
-        )
-    else:  # usb
-        config = ODKeyConfigUsb(args.device_path)
-        config.usb_vid = args.vid
-        config.usb_pid = args.pid
-
     try:
-        if args.interface == "usb" and not config.find_device():
-            return 1
-
-        if not config.upload_program(program_data, target=args.target):
-            return 1
-
-        print("Upload completed successfully!")
-
-        # Execute program if requested
-        if args.execute:
-            print(f"Executing {args.target.upper()} program...")
-            if not config.execute_program(target=args.target):
-                print("Execution failed!")
+        program_data = load_program_data(args.input)
+        check_program_size(program_data, args.target)
+        
+        config = create_config(args)
+        
+        try:
+            if args.interface == "usb" and not config.find_device():
                 return 1
-            print("Execution started successfully!")
 
-        return 0
+            if not config.upload_program(program_data, target=args.target):
+                return 1
 
+            print("Upload completed successfully!")
+
+            # Execute program if requested
+            if args.execute:
+                print(f"Executing {args.target.upper()} program...")
+                if not config.execute_program(target=args.target):
+                    print("Execution failed!")
+                    return 1
+                print("Execution started successfully!")
+
+            return 0
+
+        except Exception as e:
+            print(f"Upload failed: {e}")
+            return 1
+        finally:
+            config.close()
+            
     except Exception as e:
-        print(f"Upload failed: {e}")
+        print(f"Error: {e}")
         return 1
-    finally:
-        config.close()
 
 
 def download_command(args: Any) -> int:
     """Handle the download command"""
-    # Select interface and connect to device
-    if args.interface == "http":
-        config: Union[ODKeyConfigUsb, ODKeyConfigHttp] = ODKeyConfigHttp(
-            args.host, args.port, args.api_key
-        )
-    else:  # usb
-        config = ODKeyConfigUsb(args.device_path)
-        config.usb_vid = args.vid
-        config.usb_pid = args.pid
-
+    config = create_config(args)
+    
     try:
         if args.interface == "usb" and not config.find_device():
             return 1
@@ -194,16 +274,8 @@ def download_command(args: Any) -> int:
 
 def execute_command(args: Any) -> int:
     """Handle the execute command"""
-    # Select interface and connect to device
-    if args.interface == "http":
-        config: Union[ODKeyConfigUsb, ODKeyConfigHttp] = ODKeyConfigHttp(
-            args.host, args.port, args.api_key
-        )
-    else:  # usb
-        config = ODKeyConfigUsb(args.device_path)
-        config.usb_vid = args.vid
-        config.usb_pid = args.pid
-
+    config = create_config(args)
+    
     try:
         if args.interface == "usb" and not config.find_device():
             return 1
@@ -224,53 +296,18 @@ def execute_command(args: Any) -> int:
 
 def nvs_set_command(args: Any) -> int:
     """Handle the nvs-set command"""
-    # Select interface and connect to device
-    if args.interface == "http":
-        config: Union[ODKeyConfigUsb, ODKeyConfigHttp] = ODKeyConfigHttp(
-            args.host, args.port, args.api_key
-        )
-    else:  # usb
-        config = ODKeyConfigUsb(args.device_path)
-        config.usb_vid = args.vid
-        config.usb_pid = args.pid
-
+    config = create_config(args)
+    
     try:
         if args.interface == "usb" and not config.find_device():
             return 1
 
         # Parse value based on type
-        if args.type == "string":
-            # Default type, use value as string
-            success = config.nvs_set(args.key, args.type, args.value)
-        elif args.type in ["u8", "i8", "u16", "i16", "u32", "i32", "u64", "i64"]:
-            # Integer type
-            try:
-                int_value = int(args.value)
-                success = config.nvs_set(args.key, args.type, int_value)
-            except ValueError:
-                print(f"Error: '{args.value}' is not a valid integer")
-                return 1
-        elif args.type == "blob":
-            # Blob type
-            if args.file:
-                # Read from file
-                try:
-                    with open(args.file, "rb") as f:
-                        blob_data = f.read()
-                    success = config.nvs_set(args.key, args.type, blob_data)
-                except Exception as e:
-                    print(f"Error reading file: {e}")
-                    return 1
-            else:
-                # Interpret value as hex
-                try:
-                    blob_data = bytes.fromhex(args.value)
-                    success = config.nvs_set(args.key, args.type, blob_data)
-                except ValueError:
-                    print(f"Error: '{args.value}' is not valid hex data")
-                    return 1
-        else:
-            print(f"Error: Invalid type '{args.type}'")
+        try:
+            parsed_value = parse_nvs_value(args.value, args.type, args.file)
+            success = config.nvs_set(args.key, args.type, parsed_value)
+        except (ValueError, Exception) as e:
+            print(f"Error: {e}")
             return 1
 
         if not success:
@@ -288,16 +325,8 @@ def nvs_set_command(args: Any) -> int:
 
 def nvs_get_command(args: Any) -> int:
     """Handle the nvs-get command"""
-    # Select interface and connect to device
-    if args.interface == "http":
-        config: Union[ODKeyConfigUsb, ODKeyConfigHttp] = ODKeyConfigHttp(
-            args.host, args.port, args.api_key
-        )
-    else:  # usb
-        config = ODKeyConfigUsb(args.device_path)
-        config.usb_vid = args.vid
-        config.usb_pid = args.pid
-
+    config = create_config(args)
+    
     try:
         if args.interface == "usb" and not config.find_device():
             return 1
@@ -345,16 +374,8 @@ def nvs_get_command(args: Any) -> int:
 
 def nvs_delete_command(args: Any) -> int:
     """Handle the nvs-delete command"""
-    # Select interface and connect to device
-    if args.interface == "http":
-        config: Union[ODKeyConfigUsb, ODKeyConfigHttp] = ODKeyConfigHttp(
-            args.host, args.port, args.api_key
-        )
-    else:  # usb
-        config = ODKeyConfigUsb(args.device_path)
-        config.usb_vid = args.vid
-        config.usb_pid = args.pid
-
+    config = create_config(args)
+    
     try:
         if args.interface == "usb" and not config.find_device():
             return 1
@@ -448,46 +469,8 @@ Examples:
     upload_parser.add_argument(
         "input", type=Path, help="Input file (.odk source or .bin bytecode)"
     )
-    upload_parser.add_argument(
-        "--vid",
-        type=lambda x: int(x, 0),
-        default=0x303A,
-        help="USB Vendor ID (default: 0x1234)",
-    )
-    upload_parser.add_argument(
-        "--pid",
-        type=lambda x: int(x, 0),
-        default=0x4008,
-        help="USB Product ID (default: 0x5678)",
-    )
-    upload_parser.add_argument("--device-path", help="Specific HID device path to use")
-    upload_parser.add_argument(
-        "--interface",
-        "-i",
-        choices=["usb", "http"],
-        default="usb",
-        help="Communication interface (default: usb)",
-    )
-    upload_parser.add_argument(
-        "--host",
-        default="odkey.local",
-        help="Device hostname or IP address (default: odkey.local, for http interface)",
-    )
-    upload_parser.add_argument(
-        "--port",
-        type=int,
-        default=80,
-        help="HTTP port (default: 80, for http interface)",
-    )
-    upload_parser.add_argument(
-        "--api-key", help="API key for authentication (for http interface)"
-    )
-    upload_parser.add_argument(
-        "--target",
-        choices=["ram", "flash"],
-        default="ram",
-        help="Program target (default: ram)",
-    )
+    add_device_args(upload_parser)
+    add_target_args(upload_parser, default="ram")
     upload_parser.add_argument(
         "--execute",
         action="store_true",
@@ -510,93 +493,15 @@ Examples:
         action="store_true",
         help="Display disassembly of downloaded program",
     )
-    download_parser.add_argument(
-        "--vid",
-        type=lambda x: int(x, 0),
-        default=0x303A,
-        help="USB Vendor ID (default: 0x303A)",
-    )
-    download_parser.add_argument(
-        "--pid",
-        type=lambda x: int(x, 0),
-        default=0x4008,
-        help="USB Product ID (default: 0x4008)",
-    )
-    download_parser.add_argument(
-        "--device-path", help="Specific HID device path to use"
-    )
-    download_parser.add_argument(
-        "--interface",
-        "-i",
-        choices=["usb", "http"],
-        default="usb",
-        help="Communication interface (default: usb)",
-    )
-    download_parser.add_argument(
-        "--host",
-        default="odkey.local",
-        help="Device hostname or IP address (default: odkey.local, for http interface)",
-    )
-    download_parser.add_argument(
-        "--port",
-        type=int,
-        default=80,
-        help="HTTP port (default: 80, for http interface)",
-    )
-    download_parser.add_argument(
-        "--api-key", help="API key for authentication (for http interface)"
-    )
-    download_parser.add_argument(
-        "--target",
-        choices=["ram", "flash"],
-        default="ram",
-        help="Program target (default: ram)",
-    )
+    add_device_args(download_parser)
+    add_target_args(download_parser, default="ram")
 
     # Execute command
     execute_parser = subparsers.add_parser(
         "execute", help="Execute program on ODKey device"
     )
-    execute_parser.add_argument(
-        "--target",
-        choices=["ram", "flash"],
-        default="ram",
-        help="Program target (default: ram)",
-    )
-    execute_parser.add_argument(
-        "--vid",
-        type=lambda x: int(x, 0),
-        default=0x303A,
-        help="USB Vendor ID (default: 0x303A)",
-    )
-    execute_parser.add_argument(
-        "--pid",
-        type=lambda x: int(x, 0),
-        default=0x4008,
-        help="USB Product ID (default: 0x4008)",
-    )
-    execute_parser.add_argument("--device-path", help="Specific HID device path to use")
-    execute_parser.add_argument(
-        "--interface",
-        "-i",
-        choices=["usb", "http"],
-        default="usb",
-        help="Communication interface (default: usb)",
-    )
-    execute_parser.add_argument(
-        "--host",
-        default="odkey.local",
-        help="Device hostname or IP address (default: odkey.local, for http interface)",
-    )
-    execute_parser.add_argument(
-        "--port",
-        type=int,
-        default=80,
-        help="HTTP port (default: 80, for http interface)",
-    )
-    execute_parser.add_argument(
-        "--api-key", help="API key for authentication (for http interface)"
-    )
+    add_target_args(execute_parser, default="ram")
+    add_device_args(execute_parser)
 
     # NVS set command
     nvs_set_parser = subparsers.add_parser("nvs-set", help="Set a value in NVS storage")
@@ -622,40 +527,7 @@ Examples:
     nvs_set_parser.add_argument(
         "--file", type=Path, help="Read blob data from file (for blob type)"
     )
-    nvs_set_parser.add_argument(
-        "--vid",
-        type=lambda x: int(x, 0),
-        default=0x303A,
-        help="USB Vendor ID (default: 0x303A)",
-    )
-    nvs_set_parser.add_argument(
-        "--pid",
-        type=lambda x: int(x, 0),
-        default=0x4008,
-        help="USB Product ID (default: 0x4008)",
-    )
-    nvs_set_parser.add_argument("--device-path", help="Specific HID device path to use")
-    nvs_set_parser.add_argument(
-        "--interface",
-        "-i",
-        choices=["usb", "http"],
-        default="usb",
-        help="Communication interface (default: usb)",
-    )
-    nvs_set_parser.add_argument(
-        "--host",
-        default="odkey.local",
-        help="Device hostname or IP address (default: odkey.local, for http interface)",
-    )
-    nvs_set_parser.add_argument(
-        "--port",
-        type=int,
-        default=80,
-        help="HTTP port (default: 80, for http interface)",
-    )
-    nvs_set_parser.add_argument(
-        "--api-key", help="API key for authentication (for http interface)"
-    )
+    add_device_args(nvs_set_parser)
 
     # NVS get command
     nvs_get_parser = subparsers.add_parser(
@@ -663,82 +535,14 @@ Examples:
     )
     nvs_get_parser.add_argument("key", help="NVS key (max 15 characters)")
     nvs_get_parser.add_argument("--output", "-o", type=Path, help="Save value to file")
-    nvs_get_parser.add_argument(
-        "--vid",
-        type=lambda x: int(x, 0),
-        default=0x303A,
-        help="USB Vendor ID (default: 0x303A)",
-    )
-    nvs_get_parser.add_argument(
-        "--pid",
-        type=lambda x: int(x, 0),
-        default=0x4008,
-        help="USB Product ID (default: 0x4008)",
-    )
-    nvs_get_parser.add_argument("--device-path", help="Specific HID device path to use")
-    nvs_get_parser.add_argument(
-        "--interface",
-        "-i",
-        choices=["usb", "http"],
-        default="usb",
-        help="Communication interface (default: usb)",
-    )
-    nvs_get_parser.add_argument(
-        "--host",
-        default="odkey.local",
-        help="Device hostname or IP address (default: odkey.local, for http interface)",
-    )
-    nvs_get_parser.add_argument(
-        "--port",
-        type=int,
-        default=80,
-        help="HTTP port (default: 80, for http interface)",
-    )
-    nvs_get_parser.add_argument(
-        "--api-key", help="API key for authentication (for http interface)"
-    )
+    add_device_args(nvs_get_parser)
 
     # NVS delete command
     nvs_delete_parser = subparsers.add_parser(
         "nvs-delete", help="Delete a key from NVS storage"
     )
     nvs_delete_parser.add_argument("key", help="NVS key (max 15 characters)")
-    nvs_delete_parser.add_argument(
-        "--vid",
-        type=lambda x: int(x, 0),
-        default=0x303A,
-        help="USB Vendor ID (default: 0x303A)",
-    )
-    nvs_delete_parser.add_argument(
-        "--pid",
-        type=lambda x: int(x, 0),
-        default=0x4008,
-        help="USB Product ID (default: 0x4008)",
-    )
-    nvs_delete_parser.add_argument(
-        "--device-path", help="Specific HID device path to use"
-    )
-    nvs_delete_parser.add_argument(
-        "--interface",
-        "-i",
-        choices=["usb", "http"],
-        default="usb",
-        help="Communication interface (default: usb)",
-    )
-    nvs_delete_parser.add_argument(
-        "--host",
-        default="odkey.local",
-        help="Device hostname or IP address (default: odkey.local, for http interface)",
-    )
-    nvs_delete_parser.add_argument(
-        "--port",
-        type=int,
-        default=80,
-        help="HTTP port (default: 80, for http interface)",
-    )
-    nvs_delete_parser.add_argument(
-        "--api-key", help="API key for authentication (for http interface)"
-    )
+    add_device_args(nvs_delete_parser)
 
     # List devices command
     subparsers.add_parser("list-devices", help="List available HID devices")
