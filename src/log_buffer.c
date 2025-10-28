@@ -124,11 +124,21 @@ uint32_t log_buffer_read_chunk(uint8_t *buffer, uint32_t max_size) {
 
     uint32_t bytes_read = 0;
     if (xSemaphoreTake(g_buffer_mutex, portMAX_DELAY) == pdTRUE) {
-        // Calculate how many bytes we can read
+        // Calculate how many bytes we can read from current read position
         uint32_t available = 0;
         if (g_buffer_full) {
-            // Buffer is full, all data is available
-            available = LOG_BUFFER_SIZE;
+            // Buffer is full, all LOG_BUFFER_SIZE bytes are available
+            // Calculate how much we can read from current read_pos
+            if (g_read_pos == g_write_pos) {
+                // Special case: we're at the start of a full buffer, all data available
+                available = LOG_BUFFER_SIZE;
+            } else if (g_read_pos < g_write_pos) {
+                // Normal case: read_pos to write_pos
+                available = g_write_pos - g_read_pos;
+            } else {
+                // Wrapped case: from read_pos to end, then from start to write_pos
+                available = LOG_BUFFER_SIZE - g_read_pos + g_write_pos;
+            }
         } else {
             // Buffer not full, available data is from read_pos to write_pos
             available = g_write_pos - g_read_pos;
