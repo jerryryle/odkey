@@ -101,7 +101,7 @@ def upload_command(args: Any) -> int:
         return 1
 
     # Select interface and upload to device
-    if args.interface == "wifi":
+    if args.interface == "http":
         config: Union[ODKeyConfigUsb, ODKeyConfigHttp] = ODKeyConfigHttp(
             args.host, args.port, args.api_key
         )
@@ -139,7 +139,7 @@ def upload_command(args: Any) -> int:
 def download_command(args: Any) -> int:
     """Handle the download command"""
     # Select interface and connect to device
-    if args.interface == "wifi":
+    if args.interface == "http":
         config: Union[ODKeyConfigUsb, ODKeyConfigHttp] = ODKeyConfigHttp(
             args.host, args.port, args.api_key
         )
@@ -195,7 +195,7 @@ def download_command(args: Any) -> int:
 def execute_command(args: Any) -> int:
     """Handle the execute command"""
     # Select interface and connect to device
-    if args.interface == "wifi":
+    if args.interface == "http":
         config: Union[ODKeyConfigUsb, ODKeyConfigHttp] = ODKeyConfigHttp(
             args.host, args.port, args.api_key
         )
@@ -225,7 +225,7 @@ def execute_command(args: Any) -> int:
 def nvs_set_command(args: Any) -> int:
     """Handle the nvs-set command"""
     # Select interface and connect to device
-    if args.interface == "wifi":
+    if args.interface == "http":
         config: Union[ODKeyConfigUsb, ODKeyConfigHttp] = ODKeyConfigHttp(
             args.host, args.port, args.api_key
         )
@@ -289,7 +289,7 @@ def nvs_set_command(args: Any) -> int:
 def nvs_get_command(args: Any) -> int:
     """Handle the nvs-get command"""
     # Select interface and connect to device
-    if args.interface == "wifi":
+    if args.interface == "http":
         config: Union[ODKeyConfigUsb, ODKeyConfigHttp] = ODKeyConfigHttp(
             args.host, args.port, args.api_key
         )
@@ -346,7 +346,7 @@ def nvs_get_command(args: Any) -> int:
 def nvs_delete_command(args: Any) -> int:
     """Handle the nvs-delete command"""
     # Select interface and connect to device
-    if args.interface == "wifi":
+    if args.interface == "http":
         config: Union[ODKeyConfigUsb, ODKeyConfigHttp] = ODKeyConfigHttp(
             args.host, args.port, args.api_key
         )
@@ -409,12 +409,13 @@ def main() -> int:
 Examples:
   %(prog)s compile program.odk program.bin     # Compile ODKeyScript to bytecode
   %(prog)s disassemble program.bin             # Disassemble bytecode to text
+  %(prog)s upload program.odk                  # Upload to RAM (default)
   %(prog)s upload program.odk --execute        # Upload to RAM and execute
-  %(prog)s upload program.odk --target flash   # Upload to flash storage
-  %(prog)s download --target ram               # Download from RAM
-  %(prog)s download --target flash             # Download from flash (default)
+  %(prog)s upload program.odk --target flash   # Upload to flash
+  %(prog)s download                            # Download from RAM (default)
+  %(prog)s download --target flash             # Download from flash
+  %(prog)s execute                             # Execute RAM program (default)
   %(prog)s execute --target flash              # Execute flash program
-  %(prog)s execute --target ram                # Execute RAM program (default)
   %(prog)s nvs-set wifi_ssid "MyNetwork"       # Set a string value
   %(prog)s nvs-set http_port 80 --type u16     # Set an integer value
   %(prog)s nvs-set cert --file cert.pem --type blob  # Set blob from file
@@ -463,23 +464,23 @@ Examples:
     upload_parser.add_argument(
         "--interface",
         "-i",
-        choices=["usb", "wifi"],
+        choices=["usb", "http"],
         default="usb",
         help="Communication interface (default: usb)",
     )
     upload_parser.add_argument(
         "--host",
         default="odkey.local",
-        help="Device hostname or IP address (default: odkey.local, for wifi interface)",
+        help="Device hostname or IP address (default: odkey.local, for http interface)",
     )
     upload_parser.add_argument(
         "--port",
         type=int,
         default=80,
-        help="HTTP port (default: 80, for wifi interface)",
+        help="HTTP port (default: 80, for http interface)",
     )
     upload_parser.add_argument(
-        "--api-key", help="API key for authentication (for wifi interface)"
+        "--api-key", help="API key for authentication (for http interface)"
     )
     upload_parser.add_argument(
         "--target",
@@ -527,29 +528,29 @@ Examples:
     download_parser.add_argument(
         "--interface",
         "-i",
-        choices=["usb", "wifi"],
+        choices=["usb", "http"],
         default="usb",
         help="Communication interface (default: usb)",
     )
     download_parser.add_argument(
         "--host",
         default="odkey.local",
-        help="Device hostname or IP address (default: odkey.local, for wifi interface)",
+        help="Device hostname or IP address (default: odkey.local, for http interface)",
     )
     download_parser.add_argument(
         "--port",
         type=int,
         default=80,
-        help="HTTP port (default: 80, for wifi interface)",
+        help="HTTP port (default: 80, for http interface)",
     )
     download_parser.add_argument(
-        "--api-key", help="API key for authentication (for wifi interface)"
+        "--api-key", help="API key for authentication (for http interface)"
     )
     download_parser.add_argument(
         "--target",
         choices=["ram", "flash"],
-        default="flash",
-        help="Program target (default: flash)",
+        default="ram",
+        help="Program target (default: ram)",
     )
 
     # Execute command
@@ -578,23 +579,23 @@ Examples:
     execute_parser.add_argument(
         "--interface",
         "-i",
-        choices=["usb", "wifi"],
+        choices=["usb", "http"],
         default="usb",
         help="Communication interface (default: usb)",
     )
     execute_parser.add_argument(
         "--host",
         default="odkey.local",
-        help="Device hostname or IP address (default: odkey.local, for wifi interface)",
+        help="Device hostname or IP address (default: odkey.local, for http interface)",
     )
     execute_parser.add_argument(
         "--port",
         type=int,
         default=80,
-        help="HTTP port (default: 80, for wifi interface)",
+        help="HTTP port (default: 80, for http interface)",
     )
     execute_parser.add_argument(
-        "--api-key", help="API key for authentication (for wifi interface)"
+        "--api-key", help="API key for authentication (for http interface)"
     )
 
     # NVS set command
@@ -637,23 +638,23 @@ Examples:
     nvs_set_parser.add_argument(
         "--interface",
         "-i",
-        choices=["usb", "wifi"],
+        choices=["usb", "http"],
         default="usb",
         help="Communication interface (default: usb)",
     )
     nvs_set_parser.add_argument(
         "--host",
         default="odkey.local",
-        help="Device hostname or IP address (default: odkey.local, for wifi interface)",
+        help="Device hostname or IP address (default: odkey.local, for http interface)",
     )
     nvs_set_parser.add_argument(
         "--port",
         type=int,
         default=80,
-        help="HTTP port (default: 80, for wifi interface)",
+        help="HTTP port (default: 80, for http interface)",
     )
     nvs_set_parser.add_argument(
-        "--api-key", help="API key for authentication (for wifi interface)"
+        "--api-key", help="API key for authentication (for http interface)"
     )
 
     # NVS get command
@@ -678,23 +679,23 @@ Examples:
     nvs_get_parser.add_argument(
         "--interface",
         "-i",
-        choices=["usb", "wifi"],
+        choices=["usb", "http"],
         default="usb",
         help="Communication interface (default: usb)",
     )
     nvs_get_parser.add_argument(
         "--host",
         default="odkey.local",
-        help="Device hostname or IP address (default: odkey.local, for wifi interface)",
+        help="Device hostname or IP address (default: odkey.local, for http interface)",
     )
     nvs_get_parser.add_argument(
         "--port",
         type=int,
         default=80,
-        help="HTTP port (default: 80, for wifi interface)",
+        help="HTTP port (default: 80, for http interface)",
     )
     nvs_get_parser.add_argument(
-        "--api-key", help="API key for authentication (for wifi interface)"
+        "--api-key", help="API key for authentication (for http interface)"
     )
 
     # NVS delete command
@@ -720,23 +721,23 @@ Examples:
     nvs_delete_parser.add_argument(
         "--interface",
         "-i",
-        choices=["usb", "wifi"],
+        choices=["usb", "http"],
         default="usb",
         help="Communication interface (default: usb)",
     )
     nvs_delete_parser.add_argument(
         "--host",
         default="odkey.local",
-        help="Device hostname or IP address (default: odkey.local, for wifi interface)",
+        help="Device hostname or IP address (default: odkey.local, for http interface)",
     )
     nvs_delete_parser.add_argument(
         "--port",
         type=int,
         default=80,
-        help="HTTP port (default: 80, for wifi interface)",
+        help="HTTP port (default: 80, for http interface)",
     )
     nvs_delete_parser.add_argument(
-        "--api-key", help="API key for authentication (for wifi interface)"
+        "--api-key", help="API key for authentication (for http interface)"
     )
 
     # List devices command
