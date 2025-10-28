@@ -2,7 +2,7 @@
 
 You can find an explanation for this device's existence in [ABOUT.md](/ABOUT.md).
 
-The ODKey is a hardware device featuring a single button, a USB interface, and a WiFi interface.
+The ODKey is a hardware device featuring a single button (a [NovelKeys Big Switch](https://novelkeys.com/collections/switches/products/the-big-switch-series)), a USB interface, and a WiFi interface.
 
 When plugged into a computer, the ODKey enumerates as a USB HID keyboard. You can press the ODKey's button to run a configurable script that sends keyboard events to the connected computer. See [ODKeyScript.md](ODKeyScript.md) for documentation on the scripting language used to send keyboard events.
 
