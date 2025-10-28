@@ -19,24 +19,36 @@ static uint32_t g_read_pos = 0;
 static bool g_buffer_full = false;  // Distinguish between full and empty states
 static SemaphoreHandle_t g_buffer_mutex = NULL;
 
+// Global buffer for log formatting (512 bytes)
+static char g_log_format_buffer[512];
+
 // Store the original vprintf function
 static vprintf_like_t g_original_vprintf = NULL;
 
 // Custom vprintf handler that writes to both ring buffer and original output
 static int log_buffer_vprintf_handler(const char *fmt, va_list args) {
+    // Create a copy of va_list for the second use
+    va_list args_copy;
+    va_copy(args_copy, args);
+
     // First, call the original vprintf to maintain serial output
     int result = g_original_vprintf(fmt, args);
 
-    // Then write to our ring buffer
+    // Then write to our ring buffer using the copy
     if (xSemaphoreTake(g_buffer_mutex, portMAX_DELAY) == pdTRUE) {
-        // Create a temporary buffer for the formatted string
-        char temp_buffer[512];
-        int len = vsnprintf(temp_buffer, sizeof(temp_buffer), fmt, args);
+        // Use global buffer for formatting - no stack allocation
+        int len =
+            vsnprintf(g_log_format_buffer, sizeof(g_log_format_buffer), fmt, args_copy);
 
-        if (len > 0 && len < sizeof(temp_buffer)) {
+        if (len > 0) {
+            // Truncate if too long to fit in our buffer
+            if (len >= sizeof(g_log_format_buffer)) {
+                len = sizeof(g_log_format_buffer) - 1;
+            }
+
             // Write to ring buffer
             for (int i = 0; i < len; i++) {
-                g_log_buffer[g_write_pos] = temp_buffer[i];
+                g_log_buffer[g_write_pos] = g_log_format_buffer[i];
                 g_write_pos = (g_write_pos + 1) % LOG_BUFFER_SIZE;
 
                 // Check if we've wrapped around (write_pos wrapped back to 0)
@@ -48,6 +60,9 @@ static int log_buffer_vprintf_handler(const char *fmt, va_list args) {
 
         xSemaphoreGive(g_buffer_mutex);
     }
+
+    // Clean up the va_list copy
+    va_end(args_copy);
 
     return result;
 }
