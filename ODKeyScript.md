@@ -198,28 +198,28 @@ The VM maintains the following state:
 ## Opcode Definitions
 Each opcode is a single byte, followed by any required operands.
 ```
-0x10: KEYDN <mod> <count> <keys> # Press keys with modifiers
+0x10: KEYDN <mod> <count> <keys> # Press keys with modifiers (clears Zero Flag)
                                  # <mod>: 1-byte modifier bitmask
                                  # <count>: 1-byte count of key codes
                                  # <keys>: 0-6 bytes of key codes
 
-0x11: KEYUP <mod> <count> <keys> # Release keys with modifiers
+0x11: KEYUP <mod> <count> <keys> # Release keys with modifiers (clears Zero Flag)
                                  # <mod>: 1-byte modifier bitmask  
                                  # <count>: 1-byte count of key codes
                                  # <keys>: 0-6 bytes of key codes
 
-0x12: KEYUP_ALL                  # Release all currently pressed keys
+0x12: KEYUP_ALL                  # Release all currently pressed keys (clears Zero Flag)
 
-0x13: WAIT <ms>                  # Wait for a specified number milliseconds
+0x13: WAIT <ms>                  # Wait for a specified number milliseconds (clears Zero Flag)
                                  # <ms> 2-byte number of milliseconds to wait
 
-0x14: SET_COUNTER <index> <val>  # Set a counter variable to a value
+0x14: SET_COUNTER <index> <val>  # Set a counter variable to a value (clears Zero Flag)
                                  # <index>: 1-byte index into the counter state space
                                  # <value>: 2-byte value to set the counter to
 
 0x15: DEC <index>                # Decrement a counter variable and set the Zero Flag if the new value is zero
                                  # <index>: 1-byte index into the counter state space
 
-0x16: JNZ <address>              # Set the Program Counter to the specified address if the Zero Flag is not set
+0x16: JNZ <address>              # Set the Program Counter to the specified address if the Zero Flag is not set (clears Zero Flag)
                                  # <address> 4-byte address, which is an index into the program's byte array in memory
 ```
