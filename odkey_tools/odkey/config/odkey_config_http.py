@@ -344,6 +344,56 @@ class ODKeyConfigHttp:
             print(f"Execute failed: {e}")
             return False
 
+    def download_logs(self, file_handle: Any = None) -> None:
+        """
+        Download logs from the device via HTTP and stream to stdout or file
+        
+        Args:
+            file_handle: Optional file handle to write to. If None, streams to stdout.
+        """
+        try:
+            response = self.session.get(f"{self.base_url}/api/logs", timeout=30, stream=True)
+            
+            if response.status_code == 200:
+                for chunk in response.iter_content(chunk_size=1024, decode_unicode=True):
+                    if chunk:
+                        if file_handle:
+                            file_handle.write(chunk)
+                            file_handle.flush()
+                        else:
+                            print(chunk, end="", flush=True)
+            else:
+                print(f"Log download failed: HTTP {response.status_code}")
+                if response.text:
+                    print(f"Error: {response.text}")
+
+        except requests.exceptions.RequestException as e:
+            print(f"Log download failed: {e}")
+            return
+
+    def clear_logs(self) -> bool:
+        """
+        Clear the log buffer on the device via HTTP
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            response = self.session.delete(f"{self.base_url}/api/logs", timeout=30)
+            
+            if response.status_code == 200:
+                print("Log buffer cleared successfully")
+                return True
+            else:
+                print(f"Log clear failed: HTTP {response.status_code}")
+                if response.text:
+                    print(f"Error: {response.text}")
+                return False
+
+        except requests.exceptions.RequestException as e:
+            print(f"Log clear failed: {e}")
+            return False
+
     def close(self) -> None:
         """Close the HTTP session"""
         self.session.close()

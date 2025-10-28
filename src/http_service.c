@@ -6,6 +6,7 @@
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "esp_wifi.h"
+#include "log_buffer.h"
 #include "mdns.h"
 #include "nvs_odkey.h"
 #include "program.h"
@@ -320,6 +321,67 @@ static esp_err_t flash_program_delete_handler(httpd_req_t *req) {
     }
 
     ESP_LOGI(TAG, "Flash program deleted successfully");
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, "{\"success\":true}", HTTPD_RESP_USE_STRLEN);
+    return ESP_OK;
+}
+
+// Log download handler - GET /api/logs
+static esp_err_t log_download_handler(httpd_req_t *req) {
+    ESP_LOGI(TAG, "Log download request received");
+
+    // Check authentication
+    if (check_api_key(req) != ESP_OK) {
+        return ESP_FAIL;
+    }
+
+    // Set headers for file download
+    httpd_resp_set_type(req, "text/plain");
+    httpd_resp_set_hdr(req, "Content-Disposition", "attachment; filename=\"logs.txt\"");
+    httpd_resp_set_hdr(req, "Content-Length", NULL);  // Will be set automatically
+
+    // Start reading from the beginning of available logs
+    log_buffer_start_read();
+
+    // Send log data in chunks using the global response buffer
+    uint32_t total_sent = 0;
+    uint32_t chunk_size;
+
+    do {
+        chunk_size =
+            log_buffer_read_chunk(g_response_buffer, HTTP_SERVICE_RESPONSE_BUFFER_SIZE);
+        if (chunk_size > 0) {
+            esp_err_t ret =
+                httpd_resp_send_chunk(req, (const char *)g_response_buffer, chunk_size);
+            if (ret != ESP_OK) {
+                ESP_LOGE(TAG, "Failed to send log chunk");
+                return ESP_FAIL;
+            }
+            total_sent += chunk_size;
+        }
+    } while (chunk_size == HTTP_SERVICE_RESPONSE_BUFFER_SIZE);  // Continue until we get
+                                                                // less than full buffer
+
+    // Send final chunk to complete the response
+    httpd_resp_send_chunk(req, NULL, 0);
+
+    ESP_LOGI(TAG, "Log download completed: %lu bytes", (unsigned long)total_sent);
+    return ESP_OK;
+}
+
+// Log delete handler - DELETE /api/logs
+static esp_err_t log_delete_handler(httpd_req_t *req) {
+    ESP_LOGI(TAG, "Log delete request received");
+
+    // Check authentication
+    if (check_api_key(req) != ESP_OK) {
+        return ESP_FAIL;
+    }
+
+    // Clear the log buffer
+    log_buffer_clear();
+
+    ESP_LOGI(TAG, "Log buffer cleared successfully");
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, "{\"success\":true}", HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
@@ -1191,6 +1253,30 @@ static esp_err_t start_http_service(void) {
                                            .user_ctx = NULL};
     if (httpd_register_uri_handler(g_service, &ram_program_execute_uri) != ESP_OK) {
         ESP_LOGE(TAG, "Failed to register RAM program execute URI");
+        httpd_stop(g_service);
+        g_service = NULL;
+        return ESP_FAIL;
+    }
+
+    // Log download endpoint
+    httpd_uri_t log_download_uri = {.uri = "/api/logs",
+                                    .method = HTTP_GET,
+                                    .handler = log_download_handler,
+                                    .user_ctx = NULL};
+    if (httpd_register_uri_handler(g_service, &log_download_uri) != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to register log download URI");
+        httpd_stop(g_service);
+        g_service = NULL;
+        return ESP_FAIL;
+    }
+
+    // Log delete endpoint
+    httpd_uri_t log_delete_uri = {.uri = "/api/logs",
+                                  .method = HTTP_DELETE,
+                                  .handler = log_delete_handler,
+                                  .user_ctx = NULL};
+    if (httpd_register_uri_handler(g_service, &log_delete_uri) != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to register log delete URI");
         httpd_stop(g_service);
         g_service = NULL;
         return ESP_FAIL;

@@ -1,6 +1,10 @@
 #include "usb_system_config.h"
 #include <string.h>
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
+#include "freertos/task.h"
+#include "log_buffer.h"
 #include "nvs.h"
 #include "nvs_flash.h"
 #include "program.h"
@@ -33,6 +37,11 @@ static const char *TAG = "usb_system_config";
 #define CMD_NVS_GET_START 0x33               // Start NVS get operation
 #define CMD_NVS_GET_DATA 0x34                // Read NVS value data chunk
 #define CMD_NVS_DELETE 0x35                  // Delete NVS key
+#define CMD_LOG_READ_START 0x40              // Start streaming logs
+#define CMD_LOG_READ_CHUNK 0x41              // Device: Log data chunk (sent by device)
+#define CMD_LOG_READ_END 0x42                // Device: No more log data available
+#define CMD_LOG_READ_STOP 0x43               // Stop streaming logs
+#define CMD_LOG_CLEAR 0x44                   // Clear the log buffer
 
 // Upload/Download/NVS state
 typedef enum {
@@ -42,6 +51,7 @@ typedef enum {
     TRANSFER_STATE_NVS_SETTING,
     TRANSFER_STATE_NVS_GETTING,
     TRANSFER_STATE_RAM_WRITING,
+    TRANSFER_STATE_LOG_STREAMING,
     TRANSFER_STATE_ERROR
 } transfer_state_t;
 
@@ -976,6 +986,47 @@ static void handle_nvs_delete(const uint8_t *data) {
     send_response(RESP_OK);
 }
 
+// Handle CMD_LOG_READ_START command
+static void handle_log_read_start(void) {
+    // Start reading from the beginning of the buffer
+    log_buffer_start_read();
+
+    g_transfer_state.state = TRANSFER_STATE_LOG_STREAMING;
+
+    send_response(RESP_OK);
+}
+
+// Handle CMD_LOG_READ_CHUNK command (host requests log data)
+static void handle_log_read_chunk(void) {
+    if (g_transfer_state.state != TRANSFER_STATE_LOG_STREAMING) {
+        send_response(RESP_ERROR);
+        return;
+    }
+
+    uint8_t chunk_buffer[60];
+    uint32_t bytes_read = log_buffer_read_chunk(chunk_buffer, sizeof(chunk_buffer));
+
+    if (bytes_read > 0) {
+        send_response_with_data(RESP_OK, chunk_buffer, bytes_read);
+    } else {
+        // No more data, send zero-byte chunk to indicate end
+        send_response_with_data(RESP_OK, NULL, 0);
+        g_transfer_state.state = TRANSFER_STATE_IDLE;
+    }
+}
+
+// Handle CMD_LOG_READ_STOP command
+static void handle_log_read_stop(void) {
+    g_transfer_state.state = TRANSFER_STATE_IDLE;
+    send_response(RESP_OK);
+}
+
+// Handle CMD_LOG_CLEAR command
+static void handle_log_clear(void) {
+    log_buffer_clear();
+    send_response(RESP_OK);
+}
+
 void usb_system_config_process_command(const uint8_t *data, uint16_t len) {
     // Every command must have at least the command code (4 bytes)
     if (data == NULL || len < 4) {
@@ -1146,6 +1197,22 @@ void usb_system_config_process_command(const uint8_t *data, uint16_t len) {
         } else {
             handle_nvs_delete(data);
         }
+        break;
+
+    case CMD_LOG_READ_START:
+        handle_log_read_start();
+        break;
+
+    case CMD_LOG_READ_CHUNK:
+        handle_log_read_chunk();
+        break;
+
+    case CMD_LOG_READ_STOP:
+        handle_log_read_stop();
+        break;
+
+    case CMD_LOG_CLEAR:
+        handle_log_clear();
         break;
 
     default:

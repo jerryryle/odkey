@@ -45,6 +45,11 @@ CMD_NVS_SET_FINISH = 0x32
 CMD_NVS_GET_START = 0x33
 CMD_NVS_GET_DATA = 0x34
 CMD_NVS_DELETE = 0x35
+CMD_LOG_READ_START = 0x40
+CMD_LOG_READ_CHUNK = 0x41
+CMD_LOG_READ_END = 0x42
+CMD_LOG_READ_STOP = 0x43
+CMD_LOG_CLEAR = 0x44
 
 # NVS type constants (matching ESP-IDF nvs.h)
 NVS_TYPE_U8 = 0x01
@@ -78,8 +83,8 @@ BYTE_TO_TYPE = {v: k for k, v in TYPE_TO_BYTE.items()}
 # USB HID constants
 RAW_HID_REPORT_SIZE = 64
 DATA_PAYLOAD_SIZE = 60  # 60 bytes of data payload (bytes 4-63)
-USB_VID = 0x303A
-USB_PID = 0x4008
+USB_VID = 0x05AC
+USB_PID = 0x0250
 
 # Program size limits (matching firmware)
 PROGRAM_FLASH_MAX_SIZE = 1024 * 1024  # 1MB
@@ -719,6 +724,123 @@ class ODKeyConfigUsb:
 
         except Exception as e:
             print(f"NVS delete failed: {e}")
+            return False
+
+    def download_logs(self, file_handle: Any = None) -> None:
+        """
+        Download logs from the device and stream to stdout or file
+        
+        Args:
+            file_handle: Optional file handle to write to. If None, streams to stdout.
+        """
+        if not self.device:
+            print("Device not connected")
+            return
+
+        try:
+            # Send LOG_READ_START command
+            success, response = self.send_command(CMD_LOG_READ_START, b"")
+            if not success:
+                print("Failed to start log download")
+                return
+
+            # Buffer for handling UTF-8 sequences that might span chunks
+            buffer = bytearray()
+            
+            # Poll for log chunks and stream to stdout or file
+            while True:
+                # Send LOG_READ_CHUNK command to request data
+                success, response = self.send_command(CMD_LOG_READ_CHUNK, b"")
+                if not success:
+                    print("Failed to read log chunk")
+                    break
+                
+                # Extract data from response (bytes 4-63)
+                chunk_data = response[4:64]
+                
+                # Check if this chunk contains NULL bytes (end of data)
+                if b'\x00' in chunk_data:
+                    # Add data up to the first NULL byte
+                    null_pos = chunk_data.find(b'\x00')
+                    if null_pos > 0:
+                        buffer.extend(chunk_data[:null_pos])
+                    
+                    # Decode and output any remaining buffered data
+                    if buffer:
+                        try:
+                            text = buffer.decode("utf-8", errors="replace")
+                            if file_handle:
+                                file_handle.write(text)
+                                file_handle.flush()
+                            else:
+                                print(text, end="", flush=True)
+                        except UnicodeDecodeError:
+                            # Fallback: decode as much as possible
+                            text = buffer.decode("utf-8", errors="replace")
+                            if file_handle:
+                                file_handle.write(text)
+                                file_handle.flush()
+                            else:
+                                print(text, end="", flush=True)
+                    break
+                
+                # Add chunk data to buffer
+                buffer.extend(chunk_data)
+                
+                # Try to decode complete UTF-8 sequences from buffer
+                while buffer:
+                    try:
+                        # Try to decode the entire buffer
+                        text = buffer.decode("utf-8", errors="replace")
+                        if file_handle:
+                            file_handle.write(text)
+                            file_handle.flush()
+                        else:
+                            print(text, end="", flush=True)
+                        buffer.clear()
+                        break
+                    except UnicodeDecodeError:
+                        # Remove the last byte and try again (might be incomplete sequence)
+                        if len(buffer) > 1:
+                            # Output all but the last byte
+                            text = buffer[:-1].decode("utf-8", errors="replace")
+                            if file_handle:
+                                file_handle.write(text)
+                                file_handle.flush()
+                            else:
+                                print(text, end="", flush=True)
+                            buffer = buffer[-1:]
+                        else:
+                            # Single byte, keep it for next chunk
+                            break
+
+        except Exception as e:
+            print(f"Log download failed: {e}")
+            return
+
+    def clear_logs(self) -> bool:
+        """
+        Clear the log buffer on the device
+
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self.device:
+            print("Device not connected")
+            return False
+
+        try:
+            # Send LOG_CLEAR command
+            success, response = self.send_command(CMD_LOG_CLEAR, b"")
+            if not success:
+                print("Failed to clear logs")
+                return False
+
+            print("Log buffer cleared successfully")
+            return True
+
+        except Exception as e:
+            print(f"Log clear failed: {e}")
             return False
 
     def close(self) -> None:

@@ -31,14 +31,14 @@ def add_device_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--vid",
         type=lambda x: int(x, 0),
-        default=0x303A,
-        help="USB Vendor ID (default: 0x303A)",
+        default=0x05AC,
+        help="USB Vendor ID (default: 0x05AC)",
     )
     parser.add_argument(
         "--pid",
         type=lambda x: int(x, 0),
-        default=0x4008,
-        help="USB Product ID (default: 0x4008)",
+        default=0x0250,
+        help="USB Product ID (default: 0x0250)",
     )
     parser.add_argument("--device-path", help="Specific HID device path to use")
     parser.add_argument(
@@ -421,6 +421,58 @@ def list_devices_command(args: Any) -> int:
         return 1
 
 
+def log_download_command(args: Any) -> int:
+    """Handle the log command"""
+    config = create_config(args)
+    
+    try:
+        if args.interface == "usb" and not config.find_device():
+            return 1
+
+        # Download logs (streams to stdout or file)
+        if args.output:
+            # Stream to file
+            try:
+                with open(args.output, "w", encoding="utf-8") as f:
+                    config.download_logs(f)
+                print(f"\nLogs saved to {args.output}")
+            except Exception as e:
+                print(f"Error saving logs to file: {e}")
+                return 1
+        else:
+            # Stream to stdout
+            config.download_logs()
+
+        return 0
+
+    except Exception as e:
+        print(f"Log download failed: {e}")
+        return 1
+    finally:
+        config.close()
+
+
+def log_clear_command(args: Any) -> int:
+    """Handle the log-clear command"""
+    config = create_config(args)
+    
+    try:
+        if args.interface == "usb" and not config.find_device():
+            return 1
+
+        # Clear logs
+        if not config.clear_logs():
+            return 1
+
+        return 0
+
+    except Exception as e:
+        print(f"Log clear failed: {e}")
+        return 1
+    finally:
+        config.close()
+
+
 def main() -> int:
     """Main CLI entry point"""
     parser = argparse.ArgumentParser(
@@ -544,6 +596,21 @@ Examples:
     nvs_delete_parser.add_argument("key", help="NVS key (max 15 characters)")
     add_device_args(nvs_delete_parser)
 
+    # Log download command
+    log_parser = subparsers.add_parser(
+        "log", help="Download logs from ODKey device"
+    )
+    log_parser.add_argument(
+        "--output", "-o", type=Path, help="Save logs to file"
+    )
+    add_device_args(log_parser)
+
+    # Log clear command
+    log_clear_parser = subparsers.add_parser(
+        "log-clear", help="Clear the log buffer on ODKey device"
+    )
+    add_device_args(log_clear_parser)
+
     # List devices command
     subparsers.add_parser("list-devices", help="List available HID devices")
 
@@ -572,6 +639,10 @@ Examples:
         return nvs_delete_command(args)
     elif args.command == "list-devices":
         return list_devices_command(args)
+    elif args.command == "log":
+        return log_download_command(args)
+    elif args.command == "log-clear":
+        return log_clear_command(args)
     else:
         print(f"Unknown command: {args.command}")
         return 1

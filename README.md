@@ -242,3 +242,28 @@ uv run odkey download --disassemble
 ## flash
 uv run odkey download --target flash --disassemble
 ```
+
+### Log Management
+
+The ODKey device maintains a 32KB ring buffer in PSRAM that captures all ESP32 log output (ESP_LOGI, ESP_LOGE, etc.). Logs continue to be sent to the serial port as normal while also being captured to the ring buffer for download.
+
+#### Download Logs
+```bash
+# Download logs from device (displays to console)
+uv run odkey log
+
+# Save logs to file
+uv run odkey log --output logs.txt
+
+# Download via HTTP interface
+uv run odkey log --interface http --host odkey.local --api-key key
+```
+
+#### Clear Log Buffer
+```bash
+# Clear the log buffer on the device
+uv run odkey log-clear
+
+# Clear via HTTP interface
+uv run odkey log-clear --interface http --host odkey.local --api-key key
+```
