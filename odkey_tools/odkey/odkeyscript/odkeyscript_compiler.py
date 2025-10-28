@@ -295,7 +295,7 @@ class Lexer:
         self.tokens.append(Token(TokenType.COMMENT, comment, start_line, start_column))
 
     def _tokenize_string(self) -> None:
-        """Tokenize a string literal"""
+        """Tokenize a string literal with escape sequence support"""
         start_line = self.line
         start_column = self.column
         string = ""
@@ -308,9 +308,24 @@ class Lexer:
                 self.position += 1
                 self.column += 1
                 if self.position < len(self.source):
-                    string += self.source[self.position]
+                    # Handle escape sequences
+                    escape_char = self.source[self.position]
+                    if escape_char == 't':
+                        string += '\t'
+                    elif escape_char == 'n':
+                        string += '\n'
+                    elif escape_char == '\\':
+                        string += '\\'
+                    elif escape_char == '"':
+                        string += '"'
+                    else:
+                        # Unknown escape sequence, treat as literal
+                        string += '\\' + escape_char
                     self.position += 1
                     self.column += 1
+                else:
+                    # Backslash at end of string, treat as literal
+                    string += '\\'
             else:
                 string += self.source[self.position]
                 self.position += 1
@@ -803,8 +818,19 @@ class Compiler:
         if char.isdigit():
             return Lexer.KEY_MAP[char], 0
 
+        # Special whitespace character mapping
+        whitespace_map = {
+            "\t": "TAB",
+            "\n": "ENTER",
+        }
+        
+        if char in whitespace_map:
+            key_name = whitespace_map[char]
+            return Lexer.KEY_MAP[key_name], 0
+
         # Symbol mapping (simplified)
         symbol_map = {
+            # Shifted number keys
             "!": ("1", "M_LEFTSHIFT"),
             "@": ("2", "M_LEFTSHIFT"),
             "#": ("3", "M_LEFTSHIFT"),
@@ -815,6 +841,21 @@ class Compiler:
             "*": ("8", "M_LEFTSHIFT"),
             "(": ("9", "M_LEFTSHIFT"),
             ")": ("0", "M_LEFTSHIFT"),
+            
+            # Shifted punctuation
+            "_": ("MINUS", "M_LEFTSHIFT"),
+            "+": ("EQUAL", "M_LEFTSHIFT"),
+            "{": ("LEFTBRACE", "M_LEFTSHIFT"),
+            "}": ("RIGHTBRACE", "M_LEFTSHIFT"),
+            "|": ("BACKSLASH", "M_LEFTSHIFT"),
+            ":": ("SEMICOLON", "M_LEFTSHIFT"),
+            "<": ("COMMA", "M_LEFTSHIFT"),
+            ">": ("DOT", "M_LEFTSHIFT"),
+            "?": ("SLASH", "M_LEFTSHIFT"),
+            "~": ("GRAVE", "M_LEFTSHIFT"),
+            '"': ("APOSTROPHE", "M_LEFTSHIFT"),
+            
+            # Unshifted punctuation
             "-": ("MINUS", None),
             "=": ("EQUAL", None),
             "[": ("LEFTBRACE", None),

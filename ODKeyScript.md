@@ -76,10 +76,24 @@ press M_LEFTSHIFT
 ```
 
 ### type
-The `type` command sends a sequence of alphanumeric key presses/releases to "type" a string. Trailing spaces are omitted. The string must be separated from the `type` command by at least one space, but all whitespace before the first alphanumeric character is ignored. All trailing whitespace is also ignored. The keypress time can be changed with the `press_time` command. The `type` command will infer and automatically add shift modifiers when needed, so you can type characters and symbols as you expect to see them.
+The `type` command sends a sequence of alphanumeric key presses/releases to "type" a string. The string must be enclosed in double quotes. The string can contain alphanumeric characters, whitespace, and special characters.
+
+The keypress time can be changed with the `press_time` command. The `type` command will infer and automatically add shift modifiers when needed, so you can type characters and symbols as you expect to see them.
+
+Special character handling:
+- Tab literals in the string are typed as TAB key presses
+- Escape sequences are supported: `\t` (TAB), `\n` (ENTER), `\\` (\), `\"` (")
+- All common symbols are supported: `!@#$%^&*()_+-=[]{}|;:'"<>?/~`
+
+To include double quotes within the string, escape them with backslashes: `\"`. For example, to type `He said "Hello"`, use `type "He said \"Hello\""`.
 Example:
 ```
-type The quick brown fox jumps over the lazy dog!
+type "The quick brown fox jumps over the lazy dog!"
+type "He said \"Hello\" to me"
+type "Name:\tJohn\nAge:\t25"
+type "Path: C:\\Users\\John\\Documents"
+type "Math: 2 + 2 = 4, Score: 95%"
+type "Code: if (x < y) { return true; }"
 press ENTER
 ```
 
