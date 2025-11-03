@@ -8,10 +8,3 @@ type "Slack"
 pause 500
 press ENTER
 pause 500
-
-# Open #watercooler channel
-press M_LEFTGUI N
-pause 100
-type "#tmp-mochi"
-pause 500
-press ENTER
