@@ -1,0 +1,17 @@
+press_time 15
+interkey_time 15
+
+# Open Slack
+press M_LEFTGUI SPACE
+pause 250
+type "Slack"
+pause 500
+press ENTER
+pause 500
+
+# Open #general channel
+press M_LEFTGUI N
+pause 100
+type "#general"
+pause 500
+press ENTER
