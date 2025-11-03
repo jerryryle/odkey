@@ -1,36 +1,20 @@
-press_time 15
-interkey_time 15
+press_time 20
+interkey_time 20
 
 type "Nope. Here we go...\n"
-pause 50
 type "I'm OD and I'm here to say,\n"
-pause 50
 type "I love mochi donuts in a major way.\n"
-pause 50
 type "Ube, matcha, black sesame too,\n"
-pause 50
 type "I'm gonna buy mochi donuts for all of you!\n"
-pause 50
 type "Step in the shop, feelin' kinda fly,\n"
-pause 50
 type "Box of twelve and I don't ask why.\n"
-pause 50
 type "Glaze so shiny, soft and round,\n"
-pause 50
 type "Bite that chew—best taste in town.\n"
-pause 50
 type "Powdered sugar, stuck on my face,\n"
-pause 50
 type "I'm the mochi man, I own this place.\n"
-pause 50
 type "Coffee in one hand, donut in the other,\n"
-pause 50
 type "Sharing with my team like I'm your donut brother.\n"
-pause 50
 type "Ring-shaped joy, it's bouncy bliss,\n"
-pause 50
 type "Skip the cronuts, they can't top this.\n"
-pause 50
 type "When the box hits the table, you'll all say \"dang,\n"
-pause 50
 type "OD brought the mochi, that chewy thang!\"\n"

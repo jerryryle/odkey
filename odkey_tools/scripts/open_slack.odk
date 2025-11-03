@@ -1,5 +1,5 @@
-press_time 15
-interkey_time 15
+press_time 20
+interkey_time 20
 
 # Open Slack
 press M_LEFTGUI SPACE
@@ -12,6 +12,6 @@ pause 500
 # Open #watercooler channel
 press M_LEFTGUI N
 pause 100
-type "#watercooler"
+type "#tmp-mochi"
 pause 500
 press ENTER
