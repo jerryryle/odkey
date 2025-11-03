@@ -11,8 +11,8 @@ import sys
 from pathlib import Path
 from typing import Any, Union
 
-from .config.odkey_config_http import ODKeyConfigHttp
-from .config.odkey_config_usb import ODKeyConfigUsb, ODKeyUploadError
+from .config import ODKeyConfigHttp, ODKeyConfigUsb, ODKeyUploadError
+from .config.constants import PROGRAM_FLASH_MAX_SIZE, PROGRAM_RAM_MAX_SIZE
 from .odkeyscript.odkeyscript_compiler import CompileError, Compiler
 from .odkeyscript.odkeyscript_disassembler import disassemble
 
@@ -136,10 +136,7 @@ def parse_nvs_value(value: str, value_type: str, file_path: Path | None = None) 
 
 def check_program_size(program_data: bytes, target: str) -> None:
     """Check if program size is within limits for the target"""
-    if target == "ram":
-        max_size = 8 * 1024  # 8KB
-    else:  # flash
-        max_size = 1024 * 1024  # 1MB
+    max_size = PROGRAM_RAM_MAX_SIZE if target == "ram" else PROGRAM_FLASH_MAX_SIZE
 
     if len(program_data) > max_size:
         print(f"Error: Program too large for {target} ({len(program_data)} bytes)")

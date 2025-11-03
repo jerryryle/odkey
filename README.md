@@ -182,7 +182,7 @@ uv run odkey nvs-delete http_api_key --interface http --host odkey.local --api-k
 
 When you push the ODKey's button, it runs a program stored in flash. You can update this program over the USB/HTTP interfaces. The ODKey has a little less than 1MB reserved for the flash program.
 
-You can also upload a temporary program over USB/HTTP to the ODKey's RAM and execute it immediately. The largest program you can upload to RAM is 8KB.
+You can also upload a temporary program over USB/HTTP to the ODKey's RAM and execute it immediately. The largest program you can upload to RAM is 1MB.
 
 #### Compile and disassemble programs
 The ODKey Tools include a compiler to compile ODKeyScript and a disassembler that takes a compiled program and outputs the ODKeyScript Virtual Machine opcodes. Note that the ODKey Tools upload command can automatically compile an ODKeyScript file for you before uploading it, so you do not need to invoke the compiler yourself.

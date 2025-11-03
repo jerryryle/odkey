@@ -19,6 +19,7 @@ except ImportError:
     sys.exit(1)
 
 from ..odkeyscript.odkeyscript_compiler import CompileError, Compiler
+from .constants import PROGRAM_FLASH_MAX_SIZE, PROGRAM_RAM_MAX_SIZE
 
 # Protocol constants (matching the ESP32 firmware)
 RESP_OK = 0x10
@@ -85,10 +86,6 @@ RAW_HID_REPORT_SIZE = 64
 DATA_PAYLOAD_SIZE = 60  # 60 bytes of data payload (bytes 4-63)
 USB_VID = 0x05AC
 USB_PID = 0x0250
-
-# Program size limits (matching firmware)
-PROGRAM_FLASH_MAX_SIZE = 1024 * 1024  # 1MB
-PROGRAM_RAM_MAX_SIZE = 8 * 1024  # 8KB
 
 
 class ODKeyUploadError(Exception):

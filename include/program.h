@@ -29,7 +29,8 @@ typedef void (*program_execution_complete_callback_t)(void *arg);
 #define PROGRAM_FLASH_PAGE_SIZE 4096  // Flash page size in bytes
 #define PROGRAM_FLASH_MAX_SIZE \
     ((1024 * 1024) - PROGRAM_FLASH_PAGE_SIZE)  // Flash program max size in bytes
-#define PROGRAM_RAM_MAX_SIZE 8192              // RAM program max size in bytes
+#define PROGRAM_RAM_MAX_SIZE \
+    (1024 * 1024)  // RAM program max size in bytes (1MB in PSRAM)
 
 /**
  * @brief Program type

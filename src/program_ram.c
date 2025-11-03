@@ -1,5 +1,6 @@
 #include "program_ram.h"
 #include <string.h>
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -23,7 +24,7 @@ static struct {
     uint32_t expected_size;                 // Expected program size
     uint32_t bytes_written;                 // Total bytes written to RAM buffer
     uint32_t buffer_offset;                 // Current position in write buffer
-    uint8_t buffer[PROGRAM_RAM_MAX_SIZE];   // 8KB write buffer
+    uint8_t *buffer;                        // 1MB write buffer (allocated in PSRAM)
     program_storage_write_state_t state;    // IDLE, WRITING, ERROR
     program_write_source_t current_source;  // Current owner of write session
     uint32_t stored_program_size;           // Stored program size (set in finish)
@@ -47,7 +48,9 @@ static void reset_ram_write_state_unsafe(void) {
     g_ram_write_state.bytes_written = 0;
     g_ram_write_state.expected_size = 0;
     g_ram_write_state.buffer_offset = 0;
-    memset(g_ram_write_state.buffer, 0, sizeof(g_ram_write_state.buffer));
+    if (g_ram_write_state.buffer != NULL) {
+        memset(g_ram_write_state.buffer, 0, PROGRAM_RAM_MAX_SIZE);
+    }
     g_ram_write_state.state = PROGRAM_STORAGE_STATE_IDLE;
     g_ram_write_state.current_source = PROGRAM_WRITE_SOURCE_NONE;
     g_ram_write_state.stored_program_size = 0;
@@ -61,7 +64,26 @@ bool program_ram_init(void) {
         return false;
     }
 
-    ESP_LOGI(TAG, "RAM storage initialized");
+    // Allocate program buffer in PSRAM
+    g_ram_write_state.buffer =
+        heap_caps_malloc(PROGRAM_RAM_MAX_SIZE, MALLOC_CAP_SPIRAM);
+    if (g_ram_write_state.buffer == NULL) {
+        ESP_LOGE(TAG, "Failed to allocate program buffer in PSRAM");
+        vSemaphoreDelete(g_ram_write_state_mutex);
+        g_ram_write_state_mutex = NULL;
+        return false;
+    }
+
+    // Initialize buffer state
+    memset(g_ram_write_state.buffer, 0, PROGRAM_RAM_MAX_SIZE);
+    g_ram_write_state.bytes_written = 0;
+    g_ram_write_state.expected_size = 0;
+    g_ram_write_state.buffer_offset = 0;
+    g_ram_write_state.state = PROGRAM_STORAGE_STATE_IDLE;
+    g_ram_write_state.current_source = PROGRAM_WRITE_SOURCE_NONE;
+    g_ram_write_state.stored_program_size = 0;
+
+    ESP_LOGI(TAG, "RAM storage initialized (%d bytes in PSRAM)", PROGRAM_RAM_MAX_SIZE);
     return true;
 }
 
@@ -153,7 +175,9 @@ static bool program_ram_write_start_unsafe(uint32_t expected_program_size,
     g_ram_write_state.expected_size = expected_program_size;
     g_ram_write_state.bytes_written = 0;
     g_ram_write_state.buffer_offset = 0;
-    memset(g_ram_write_state.buffer, 0, sizeof(g_ram_write_state.buffer));
+    if (g_ram_write_state.buffer != NULL) {
+        memset(g_ram_write_state.buffer, 0, PROGRAM_RAM_MAX_SIZE);
+    }
     g_ram_write_state.state = PROGRAM_STORAGE_STATE_WRITING;
     g_ram_write_state.current_source = source;
     g_ram_write_state.stored_program_size = 0;
@@ -347,11 +371,9 @@ bool program_ram_write_finish(uint32_t program_size, program_write_source_t sour
 bool program_ram_erase(void) {
     ESP_LOGI(TAG, "Erasing program from RAM storage");
 
-    // Zero the RAM buffer and reset state
-    memset(g_ram_write_state.buffer, 0, sizeof(g_ram_write_state.buffer));
-
     if (g_ram_write_state_mutex != NULL) {
         if (xSemaphoreTake(g_ram_write_state_mutex, portMAX_DELAY) == pdTRUE) {
+            // Zero the RAM buffer and reset state
             reset_ram_write_state_unsafe();
             xSemaphoreGive(g_ram_write_state_mutex);
         }
