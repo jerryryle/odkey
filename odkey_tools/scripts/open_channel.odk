@@ -4,6 +4,6 @@ interkey_time 20
 # Open #watercooler channel
 press M_LEFTGUI N
 pause 100
-type "#tmp-mochi"
+type "#watercooler"
 pause 500
 press ENTER
