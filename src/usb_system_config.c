@@ -164,10 +164,14 @@ static void send_response(uint8_t response_id) {
     // Send response packet (64 bytes with command code in first byte)
     uint8_t response_data[64] = {0};
     response_data[0] = response_id;
-    tud_hid_n_report(
+    bool success = tud_hid_n_report(
         g_transfer_state.interface_num, 0, response_data, sizeof(response_data));
 
-    ESP_LOGD(TAG, "Sent response: 0x%02X", response_id);
+    if (!success) {
+        ESP_LOGE(TAG, "tud_hid_n_report FAILED for response: 0x%02X", response_id);
+    } else {
+        ESP_LOGD(TAG, "Sent response: 0x%02X", response_id);
+    }
 }
 
 static void send_response_with_data(uint8_t response_id,
@@ -188,13 +192,20 @@ static void send_response_with_data(uint8_t response_id,
         memcpy(&response_data[4], data, copy_len);
     }
 
-    tud_hid_n_report(
+    bool success = tud_hid_n_report(
         g_transfer_state.interface_num, 0, response_data, sizeof(response_data));
 
-    ESP_LOGD(TAG,
-             "Sent response: 0x%02X with %lu bytes data",
-             response_id,
-             (unsigned long)copy_len);
+    if (!success) {
+        ESP_LOGE(TAG,
+                 "tud_hid_n_report FAILED for response: 0x%02X with %lu bytes data",
+                 response_id,
+                 (unsigned long)copy_len);
+    } else {
+        ESP_LOGD(TAG,
+                 "Sent response: 0x%02X with %lu bytes data",
+                 response_id,
+                 (unsigned long)copy_len);
+    }
 }
 
 // Handle CMD_FLASH_PROGRAM_WRITE_START command
