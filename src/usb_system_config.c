@@ -3,6 +3,7 @@
 #include "buffer_utils.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "log_buffer.h"
@@ -15,6 +16,17 @@ static const char *TAG = "usb_system_config";
 
 // NVS transfer buffer size
 #define NVS_TRANSFER_BUFFER_SIZE 1024
+
+// Command processing task configuration
+#define COMMAND_QUEUE_DEPTH 5
+#define COMMAND_TASK_STACK_SIZE 4096
+#define COMMAND_TASK_PRIORITY 4
+
+// Command queue item structure
+typedef struct {
+    uint8_t data[64];  // Full 64-byte packet
+    uint16_t len;      // Actual length received
+} command_queue_item_t;
 
 // Command codes for Raw HID protocol (first byte of 64-byte packet)
 #define RESP_OK 0x10     // Success response
@@ -73,12 +85,33 @@ static struct {
     size_t nvs_transfer_buffer_transferred;
 } g_transfer_state = {0};
 
+// Command processing queue and task
+static QueueHandle_t g_command_queue = NULL;
+static TaskHandle_t g_command_task_handle = NULL;
+
+// Forward declarations
+static void process_command_internal(const uint8_t *data, uint16_t len);
+
 // Helper function to reset NVS transfer buffer
 static void reset_nvs_transfer_buffer(void) {
     memset(g_transfer_state.nvs_transfer_buffer,
            0,
            sizeof(g_transfer_state.nvs_transfer_buffer));
     g_transfer_state.nvs_transfer_buffer_transferred = 0;
+}
+
+// Command processing task function
+static void command_processing_task(void *pvParameters) {
+    ESP_LOGI(TAG, "Command processing task started");
+
+    command_queue_item_t cmd_item;
+    for (;;) {
+        // Wait for a command from the queue
+        if (xQueueReceive(g_command_queue, &cmd_item, portMAX_DELAY) == pdTRUE) {
+            // Process the command (this can now block safely)
+            process_command_internal(cmd_item.data, cmd_item.len);
+        }
+    }
 }
 
 bool usb_system_config_init(uint8_t interface_num) {
@@ -96,15 +129,36 @@ bool usb_system_config_init(uint8_t interface_num) {
     // Reset NVS transfer buffer
     reset_nvs_transfer_buffer();
 
+    // Create command queue
+    g_command_queue = xQueueCreate(COMMAND_QUEUE_DEPTH, sizeof(command_queue_item_t));
+    if (g_command_queue == NULL) {
+        ESP_LOGE(TAG, "Failed to create command queue");
+        return false;
+    }
+
+    // Create command processing task
+    BaseType_t ret = xTaskCreate(command_processing_task,
+                                 "usb_cmd",
+                                 COMMAND_TASK_STACK_SIZE,
+                                 NULL,
+                                 COMMAND_TASK_PRIORITY,
+                                 &g_command_task_handle);
+    if (ret != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create command processing task");
+        vQueueDelete(g_command_queue);
+        g_command_queue = NULL;
+        return false;
+    }
+
     ESP_LOGI(
         TAG, "System configuration module initialized on interface %d", interface_num);
     return true;
 }
 
 static void send_response(uint8_t response_id) {
-    if (!tud_hid_ready()) {
-        ESP_LOGW(TAG, "HID not ready for response");
-        return;
+    // Wait for USB HID to be ready before sending
+    while (!tud_hid_ready()) {
+        vTaskDelay(pdMS_TO_TICKS(1));
     }
 
     // Send response packet (64 bytes with command code in first byte)
@@ -119,9 +173,9 @@ static void send_response(uint8_t response_id) {
 static void send_response_with_data(uint8_t response_id,
                                     const uint8_t *data,
                                     size_t data_len) {
-    if (!tud_hid_ready()) {
-        ESP_LOGW(TAG, "HID not ready for response");
-        return;
+    // Wait for USB HID to be ready before sending
+    while (!tud_hid_ready()) {
+        vTaskDelay(pdMS_TO_TICKS(1));
     }
 
     // Send response packet (64 bytes with command code in first byte)
@@ -1050,6 +1104,24 @@ static void handle_log_clear(void) {
 }
 
 void usb_system_config_process_command(const uint8_t *data, uint16_t len) {
+    // Validate input
+    if (data == NULL || len == 0 || len > 64) {
+        ESP_LOGE(TAG, "Invalid command data: data=%p, len=%d", data, len);
+        return;
+    }
+
+    // Enqueue command for processing by the command task
+    command_queue_item_t cmd_item;
+    memset(&cmd_item, 0, sizeof(cmd_item));
+    memcpy(cmd_item.data, data, len);
+    cmd_item.len = len;
+
+    if (xQueueSend(g_command_queue, &cmd_item, 0) != pdTRUE) {
+        ESP_LOGW(TAG, "Command queue full, dropping command 0x%02X", data[0]);
+    }
+}
+
+static void process_command_internal(const uint8_t *data, uint16_t len) {
     // Every command must have at least the command code (4 bytes)
     if (data == NULL || len < 4) {
         ESP_LOGE(TAG, "Invalid command data");
@@ -1058,19 +1130,20 @@ void usb_system_config_process_command(const uint8_t *data, uint16_t len) {
     }
 
     // Debug: Print what we received
-    ESP_LOGD(TAG,
-             "Received command: len=%d, data[0]=0x%02X, first 8 bytes: %02X %02X %02X "
-             "%02X %02X %02X %02X %02X",
-             len,
-             data[0],
-             data[0],
-             data[1],
-             data[2],
-             data[3],
-             data[4],
-             data[5],
-             data[6],
-             data[7]);
+    ESP_LOGD(
+        TAG,
+        "Processing command: len=%d, data[0]=0x%02X, first 8 bytes: %02X %02X %02X "
+        "%02X %02X %02X %02X %02X",
+        len,
+        data[0],
+        data[0],
+        data[1],
+        data[2],
+        data[3],
+        data[4],
+        data[5],
+        data[6],
+        data[7]);
 
     uint8_t command = data[0];  // Command code is currently only on the first byte
 

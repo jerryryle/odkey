@@ -19,8 +19,8 @@ static uint32_t g_read_pos = 0;
 static bool g_buffer_full = false;  // Distinguish between full and empty states
 static SemaphoreHandle_t g_buffer_mutex = NULL;
 
-// Global buffer for log formatting (512 bytes)
-static char g_log_format_buffer[512];
+// Global buffer for log formatting
+static char g_log_format_buffer[2 * 1024];
 
 // Store the original vprintf function
 static vprintf_like_t g_original_vprintf = NULL;
