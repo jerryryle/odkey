@@ -5,6 +5,7 @@ ODKey HTTP Configuration Interface
 Provides HTTP-based system configuration functionality for ODKey devices over WiFi.
 """
 
+import codecs
 import json
 import sys
 from typing import Any, Optional, Tuple
@@ -355,13 +356,29 @@ class ODKeyConfigHttp:
             response = self.session.get(f"{self.base_url}/api/logs", timeout=30, stream=True)
             
             if response.status_code == 200:
-                for chunk in response.iter_content(chunk_size=1024, decode_unicode=True):
+                # Create incremental UTF-8 decoder (handles incomplete sequences automatically)
+                decoder = codecs.getincrementaldecoder('utf-8')(errors='replace')
+                
+                # Read chunks as bytes and decode incrementally
+                for chunk in response.iter_content(chunk_size=1024, decode_unicode=False):
                     if chunk:
-                        if file_handle:
-                            file_handle.write(chunk)
-                            file_handle.flush()
-                        else:
-                            print(chunk, end="", flush=True)
+                        # Decoder automatically buffers incomplete UTF-8 sequences
+                        text = decoder.decode(chunk, final=False)
+                        if text:  # Only output if we got complete characters
+                            if file_handle:
+                                file_handle.write(text)
+                                file_handle.flush()
+                            else:
+                                print(text, end="", flush=True)
+                
+                # Flush any remaining buffered data (end of stream)
+                text = decoder.decode(b'', final=True)
+                if text:
+                    if file_handle:
+                        file_handle.write(text)
+                        file_handle.flush()
+                    else:
+                        print(text, end="", flush=True)
             else:
                 print(f"Log download failed: HTTP {response.status_code}")
                 if response.text:
@@ -369,7 +386,6 @@ class ODKeyConfigHttp:
 
         except requests.exceptions.RequestException as e:
             print(f"Log download failed: {e}")
-            return
 
     def clear_logs(self) -> bool:
         """

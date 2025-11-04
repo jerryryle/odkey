@@ -6,6 +6,7 @@ Provides USB system configuration functionality for ODKey devices over Raw HID.
 """
 
 import argparse
+import codecs
 import struct
 import sys
 import time
@@ -194,14 +195,25 @@ class ODKeyConfigUsb:
                 # Try to read response (no report ID needed for our protocol)
                 response = self.device.read(RAW_HID_REPORT_SIZE)
                 if response and len(response) > 0:
+                    # Validate response length - must be exactly 64 bytes
+                    # If it's not, we might be reading a misaligned packet
+                    if len(response) != RAW_HID_REPORT_SIZE:
+                        # Wrong length - discard and continue waiting
+                        print(f"[DEBUG] Discarding packet with wrong length: {len(response)} (expected {RAW_HID_REPORT_SIZE})")
+                        continue
                     response_id = response[0]
                     if response_id == RESP_OK:
                         return True, bytes(response)
                     elif response_id == RESP_ERROR:
                         return False, bytes(response)
                     else:
-                        print(f"Unexpected response ID: 0x{response_id:02X}")
-                        return False, b""
+                        # Unexpected response ID - might be reading log data or wrong packet
+                        # Log full packet for debugging
+                        print(f"[DEBUG] Unexpected response ID: 0x{response_id:02X}")
+                        print(f"[DEBUG] Full packet (hex): {response.hex()}")
+                        print(f"[DEBUG] Full packet (first 32 bytes): {response[:32].hex()}")
+                        # Discard and continue waiting (could be stale/misaligned data)
+                        continue
                 time.sleep(0.01)  # Small delay to avoid busy waiting
 
             print("Timeout waiting for response")
@@ -725,7 +737,10 @@ class ODKeyConfigUsb:
 
     def download_logs(self, file_handle: Any = None) -> None:
         """
-        Download logs from the device and stream to stdout or file
+        Download logs from the device and stream to stdout or file line by line.
+        
+        Since UTF-8 sequences don't span newlines, we can decode complete UTF-8
+        sequences and then split on newlines to output complete log lines immediately.
         
         Args:
             file_handle: Optional file handle to write to. If None, streams to stdout.
@@ -741,79 +756,63 @@ class ODKeyConfigUsb:
                 print("Failed to start log download")
                 return
 
-            # Buffer for handling UTF-8 sequences that might span chunks
-            buffer = bytearray()
-            
-            # Poll for log chunks and stream to stdout or file
+            # Create incremental UTF-8 decoder (handles incomplete sequences automatically)
+            decoder = codecs.getincrementaldecoder('utf-8')(errors='replace')
+            line_buffer = ""
+
+            # Poll for log chunks and output complete lines as we get them
             while True:
                 # Send LOG_READ_CHUNK command to request data
                 success, response = self.send_command(CMD_LOG_READ_CHUNK, b"")
                 if not success:
                     print("Failed to read log chunk")
                     break
-                
+
                 # Extract data from response (bytes 4-63)
                 chunk_data = response[4:64]
+
+                # Check if this is the last chunk (contains NULL bytes)
+                null_pos = chunk_data.find(b'\x00')
+                is_last_chunk = (null_pos != -1)
                 
-                # Check if this chunk contains NULL bytes (end of data)
-                if b'\x00' in chunk_data:
-                    # Add data up to the first NULL byte
-                    null_pos = chunk_data.find(b'\x00')
-                    if null_pos > 0:
-                        buffer.extend(chunk_data[:null_pos])
-                    
-                    # Decode and output any remaining buffered data
-                    if buffer:
-                        try:
-                            text = buffer.decode("utf-8", errors="replace")
-                            if file_handle:
-                                file_handle.write(text)
-                                file_handle.flush()
-                            else:
-                                print(text, end="", flush=True)
-                        except UnicodeDecodeError:
-                            # Fallback: decode as much as possible
-                            text = buffer.decode("utf-8", errors="replace")
-                            if file_handle:
-                                file_handle.write(text)
-                                file_handle.flush()
-                            else:
-                                print(text, end="", flush=True)
-                    break
+                if is_last_chunk:
+                    # Only process data up to the first NULL byte
+                    chunk_data = chunk_data[:null_pos]
+
+                # Decode chunk (decoder automatically buffers incomplete UTF-8 sequences)
+                decoded_text = decoder.decode(chunk_data, final=is_last_chunk)
                 
-                # Add chunk data to buffer
-                buffer.extend(chunk_data)
+                # Combine with any incomplete line from previous iteration
+                full_text = line_buffer + decoded_text
                 
-                # Try to decode complete UTF-8 sequences from buffer
-                while buffer:
-                    try:
-                        # Try to decode the entire buffer
-                        text = buffer.decode("utf-8", errors="replace")
+                # Split on newlines and output complete lines
+                lines = full_text.split('\n')
+                
+                # Output all complete lines (all but the last)
+                for line in lines[:-1]:
+                    output_line = line + '\n'
+                    if file_handle:
+                        file_handle.write(output_line)
+                        file_handle.flush()
+                    else:
+                        print(output_line, end="", flush=True)
+                
+                # Keep the last part (no trailing newline) for next iteration
+                line_buffer = lines[-1]
+                
+                if is_last_chunk:
+                    # Output any remaining partial line
+                    if line_buffer:
                         if file_handle:
-                            file_handle.write(text)
+                            file_handle.write(line_buffer)
                             file_handle.flush()
                         else:
-                            print(text, end="", flush=True)
-                        buffer.clear()
-                        break
-                    except UnicodeDecodeError:
-                        # Remove the last byte and try again (might be incomplete sequence)
-                        if len(buffer) > 1:
-                            # Output all but the last byte
-                            text = buffer[:-1].decode("utf-8", errors="replace")
-                            if file_handle:
-                                file_handle.write(text)
-                                file_handle.flush()
-                            else:
-                                print(text, end="", flush=True)
-                            buffer = buffer[-1:]
-                        else:
-                            # Single byte, keep it for next chunk
-                            break
+                            print(line_buffer, end="", flush=True)
+                    break
 
         except Exception as e:
             print(f"Log download failed: {e}")
-            return
+
 
     def clear_logs(self) -> bool:
         """
