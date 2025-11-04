@@ -156,8 +156,8 @@ bool usb_system_config_init(uint8_t interface_num) {
 }
 
 static void send_response(uint8_t response_id) {
-    // Wait for USB HID to be ready before sending
-    while (!tud_hid_ready()) {
+    // Wait for USB HID to be ready before sending (check OUR specific interface)
+    while (!tud_hid_n_ready(g_transfer_state.interface_num)) {
         vTaskDelay(pdMS_TO_TICKS(1));
     }
 
@@ -177,8 +177,8 @@ static void send_response(uint8_t response_id) {
 static void send_response_with_data(uint8_t response_id,
                                     const uint8_t *data,
                                     size_t data_len) {
-    // Wait for USB HID to be ready before sending
-    while (!tud_hid_ready()) {
+    // Wait for USB HID to be ready before sending (check OUR specific interface)
+    while (!tud_hid_n_ready(g_transfer_state.interface_num)) {
         vTaskDelay(pdMS_TO_TICKS(1));
     }
 
