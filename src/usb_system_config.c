@@ -1079,7 +1079,7 @@ static void handle_log_read_chunk(void) {
         return;
     }
 
-    uint8_t chunk_buffer[60];
+    uint8_t chunk_buffer[60] = {0};
     uint32_t bytes_read = log_buffer_read_chunk(chunk_buffer, sizeof(chunk_buffer));
 
     if (bytes_read > 0) {
