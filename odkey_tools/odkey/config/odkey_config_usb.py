@@ -193,27 +193,30 @@ class ODKeyConfigUsb:
 
             while time.time() - start_time < timeout:
                 # Try to read response (no report ID needed for our protocol)
-                response = self.device.read(RAW_HID_REPORT_SIZE)
-                if response and len(response) > 0:
-                    # Validate response length - must be exactly 64 bytes
-                    # If it's not, we might be reading a misaligned packet
-                    if len(response) != RAW_HID_REPORT_SIZE:
-                        # Wrong length - discard and continue waiting
-                        print(f"[DEBUG] Discarding packet with wrong length: {len(response)} (expected {RAW_HID_REPORT_SIZE})")
-                        continue
-                    response_id = response[0]
-                    if response_id == RESP_OK:
-                        return True, bytes(response)
-                    elif response_id == RESP_ERROR:
-                        return False, bytes(response)
-                    else:
-                        # Unexpected response ID - might be reading log data or wrong packet
-                        # Log full packet for debugging
-                        print(f"[DEBUG] Unexpected response ID: 0x{response_id:02X}")
-                        print(f"[DEBUG] Full packet (hex): {response.hex()}")
-                        print(f"[DEBUG] Full packet (first 32 bytes): {response[:32].hex()}")
-                        # Discard and continue waiting (could be stale/misaligned data)
-                        continue
+                response_raw = self.device.read(RAW_HID_REPORT_SIZE)
+                if response_raw and len(response_raw) > 0:
+                    if response_raw and len(response_raw) > 0:
+                        # Convert to bytes
+                        response = bytes(response_raw)
+
+                        # Validate response length - must be exactly 64 bytes
+                        # If it's not, we might be reading a misaligned packet
+                        if len(response) != RAW_HID_REPORT_SIZE:
+                            # Wrong length - discard and continue waiting
+                            print(f"[DEBUG] Discarding packet with wrong length: {len(response)} (expected {RAW_HID_REPORT_SIZE})")
+                            continue
+                        response_id = response[0]
+                        if response_id == RESP_OK:
+                            return True, response
+                        elif response_id == RESP_ERROR:
+                            return False, response
+                        else:
+                            # Unexpected response ID - might be reading log data or wrong packet
+                            # Log full packet for debugging
+                            print(f"[DEBUG] Unexpected response ID: 0x{response_id:02X}")
+                            print(f"[DEBUG] Full packet (hex): {response.hex()}")
+                            # Discard and continue waiting (could be stale/misaligned data)
+                            continue
                 time.sleep(0.01)  # Small delay to avoid busy waiting
 
             print("Timeout waiting for response")
