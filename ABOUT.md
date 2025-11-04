@@ -1,5 +1,9 @@
 # About the ODKey
 
+I made the ODKey to prank my coworker.
+
+![The ODKey](media/img-odkey.jpeg "Photo of the ODKey at OD's desk")
+
 You can find technical information and instructions for ODKey use in [README.md](/README.md).
 
 I bought a 3D printer earlier this year and I've been printing random things for my coworkers. Usually, they'll find a model on a site like [makerworld](https://makerworld.com) and send it to me for printing. It doesn't take much effort on my part to print these & it's helped me learn more about the printer and 3D printing in general.
