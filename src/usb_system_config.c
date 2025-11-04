@@ -51,10 +51,8 @@ typedef struct {
 #define CMD_NVS_GET_DATA 0x34                // Read NVS value data chunk
 #define CMD_NVS_DELETE 0x35                  // Delete NVS key
 #define CMD_LOG_READ_START 0x40              // Start streaming logs
-#define CMD_LOG_READ_CHUNK 0x41              // Device: Log data chunk (sent by device)
-#define CMD_LOG_READ_END 0x42                // Device: No more log data available
-#define CMD_LOG_READ_STOP 0x43               // Stop streaming logs
-#define CMD_LOG_CLEAR 0x44                   // Clear the log buffer
+#define CMD_LOG_READ_CHUNK 0x41              // Read log data chunk
+#define CMD_LOG_CLEAR 0x42                   // Clear the log buffer
 
 // Upload/Download/NVS state
 typedef enum {
@@ -1102,12 +1100,6 @@ static void handle_log_read_chunk(void) {
     }
 }
 
-// Handle CMD_LOG_READ_STOP command
-static void handle_log_read_stop(void) {
-    g_transfer_state.state = TRANSFER_STATE_IDLE;
-    send_response(RESP_OK);
-}
-
 // Handle CMD_LOG_CLEAR command
 static void handle_log_clear(void) {
     log_buffer_clear();
@@ -1327,10 +1319,6 @@ static void process_command_internal(const uint8_t *data, uint16_t len) {
 
     case CMD_LOG_READ_CHUNK:
         handle_log_read_chunk();
-        break;
-
-    case CMD_LOG_READ_STOP:
-        handle_log_read_stop();
         break;
 
     case CMD_LOG_CLEAR:
