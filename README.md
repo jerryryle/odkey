@@ -14,16 +14,16 @@ You can use both USB and WiFi to configure the ODKey and run programs.
 
 * The Button
     * A push/release of the ODKey button runs the current flash program (more on this below)
-    * If the ODKey is held, it will repeatedly run the flash program as long as it remains held. While held, the ODKey will run the program completion, wait a configurable amount of time (as deteremined by the `button_repeat` setting), and then run the program again, etc. Once the button is released, any currently-running program will finish and then program exection will stop.
+    * If the ODKey is held, it will repeatedly run the flash program as long as it remains held. While held, the ODKey will run the program completion, wait a configurable amount of time (as determined by the `button_repeat` setting), and then run the program again, etc. Once the button is released, any currently-running program will finish and then program execution will stop.
     * Pressing the ODKey button will not interrupt a running program. If you have uploaded a very long program and executed it by pressing the button, the only way to halt it is to physically unplug the ODKey.
     * The ODKey will not enqueue presses. When you press/release the button, two things can happen:
         * The ODKey is idle and begins executing the flash program
         * The ODKey is already executing a program and ignores the new button press.
 * ODKeyScript Programs
     * ODKeyScript Programs are compiled locally using the ODKey Tools. Compiled bytecode is uploaded to the device via USB or WiFi.
-    * An ODKeyScript Program can be uploaded to flash via USB or WiFi. When the button is pressed, it runs the program currently stored in flash. Flash is non-volatile storage and persists when the device is unplugged/re-plugged or owtherise rebooted.
+    * An ODKeyScript Program can be uploaded to flash via USB or WiFi. When the button is pressed, it runs the program currently stored in flash. Flash is non-volatile storage and persists when the device is unplugged/re-plugged or otherwise rebooted.
     * An ODKeyScript Program can be uploaded to RAM and executed immediately. This is an ephemeral program meant for testing and/or remote control of a computer.
-    * See [ODKeyScript.md](ODKeyScript.md) for documentation of theODKeyScript language used to write programs.
+    * See [ODKeyScript.md](ODKeyScript.md) for documentation of the ODKeyScript language used to write programs.
 * Configuration
     * The ODKey can be configured via USB and/or WiFi.
 
@@ -267,3 +267,7 @@ uv run odkey log-clear
 # Clear via HTTP interface
 uv run odkey log-clear --interface http --host odkey.local --api-key key
 ```
+
+## Known issues
+
+* There is an occasional corruption issue when downloading logs. It seems to be correlated with attempts to download logs while logs are being generated. It may only occur over the USB interface. It has not been tested well enough to know for sure.
