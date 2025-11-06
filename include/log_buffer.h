@@ -45,6 +45,14 @@ void log_buffer_clear(void);
  */
 void log_buffer_deinit(void);
 
+/**
+ * @brief Print to serial port only (bypasses log buffer)
+ * Works like printf but only writes to serial, not the log buffer
+ * @param fmt Format string (same as printf)
+ * @param ... Variable arguments
+ */
+void log_serial_printf(const char *fmt, ...);
+
 #ifdef __cplusplus
 }
 #endif

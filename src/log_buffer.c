@@ -212,3 +212,14 @@ void log_buffer_deinit(void) {
         }
     }
 }
+
+void log_serial_printf(const char *fmt, ...) {
+    if (g_original_vprintf == NULL) {
+        return;  // Buffer not initialized yet
+    }
+
+    va_list args;
+    va_start(args, fmt);
+    g_original_vprintf(fmt, args);
+    va_end(args);
+}
