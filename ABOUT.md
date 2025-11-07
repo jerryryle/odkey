@@ -84,8 +84,9 @@ It took a few tries and I still need to hone my sanding/painting skills more, bu
 A few key lessons:
 
 * Primer is insufficient to fill deeper cracks. If you try to build up a base of primer that's thick enough to fill them, you'll wind up with a gummy mess when sanding. Use putty to fill deeper cracks. I had watched some videos that warned about this, but I thought the cracks I was filling with primer were small enough to get away with. They were not and I used too much primer.
-* If the surface isn't perfectly smooth before painting, imperfections will stand out once painted.
+* If the surface isn't perfectly smooth before painting, imperfections will stand out once painted. This may seem obvious, but I had a few small surface imperfections that I could feel but not easily see. Once painted, they clearly stood out.
 * Paint in very light coats, keeping the can at a distance, in order to prevent drips that look terrible. I wound up with a few small ones. Supposedly you can sand them down and re-paint, but I was tired of sanding and painting by that point.
+* If you have mating parts, mate them and prime/sand them together. The parting line on my base top/bottom is more prominent than it should be because I primed and sanded them separately.
 * Don't leave painted PLA models in direct sunlight to dry! PLA softens at relatively low temperatures. Both halves of my base warped irreparably because I left them in the sun to dry after their first coat of paint. A huge waste of time spent on printing/sanding/priming.
 * Don't put too much clear coat on at once. I did this by accident to the first keycap that I had sanded and painted perfectly and destroyed it with a wrinkled texture.
 
