@@ -92,7 +92,7 @@ A few key lessons:
 
 ![Wrinkled keycap](media/img-wrinkled-keycap.jpeg "Photo of a keycap that has a wrinkled texture due to too much clear coat")
 
-All the waiting for printing and paint to dry gave me plenty of time to work on the ODKey firmware. I largely vibe-coded it using Cursor, which did reasonably well with supporting Python scripts, though it struggled a bit with the firmware. I began with a simple USB HID device that pressed/released the "A" key 1 second after it was plugged into USB. Cursor got a reasonable framework for this up & running, though it made several mistakes in the USB descriptor that I had to hunt down and fix. And, as I extended the codebase with more and more functionality, I found myself constantly fixing thread-safety issues that Cursor introduced.
+All the waiting for printing and paint to dry gave me plenty of time to work on the ODKey firmware. I largely vibe-coded it using Cursor, which did reasonably well with supporting Python scripts, though it struggled a bit with the firmware. I began with a simple USB HID device that pressed/released the "A" key 1 second after it was plugged into a USB host. Cursor created a reasonable framework for this, though it made several mistakes in the USB descriptor that I had to hunt down and fix. And, as I added to the codebase, I found myself often fixing thread-safety issues that Cursor introduced.
 
 I knew that I wanted to use a scripting language for the keypress functionality so that the device could be easily user-reprogrammed. I looked into [DuckyScript™](https://docs.hak5.org/hak5-usb-rubber-ducky/usb-rubber-ducky-by-hak5/), but couldn't be arsed to read the huge license for it. It had way more functionality than I needed anyways, so I decided to roll my own.
 
