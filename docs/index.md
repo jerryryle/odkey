@@ -2,13 +2,11 @@
 title: "(November 2025) ODKey: A USB HID macro key, with a fun WiFi backdoor"
 ---
 # Background
-You can find more technical detail in the [repo itself](https://github.com/jerryryle/odkey).
+You can find more technical detail and instructions for ODKey use in the [repo itself](https://github.com/jerryryle/odkey).
 
 I made the ODKey to prank my coworker and send messages from him in Slack. It almost worked, but I forgot to revert my script from a test channel to a real one. Ah well, next time. He caught it furiously trying to type to a non-existent channel. I've never seen someone unplug a USB device that fast.
 
 ![The ODKey](media/img-odkey.jpeg "Photo of the ODKey at OD's desk")
-
-You can find technical information and instructions for ODKey use in [README.md](/README.md).
 
 I bought a 3D printer earlier this year and I've been printing random things for my coworkers. Usually, they'll find a model on a site like [makerworld](https://makerworld.com) and send it to me for printing. It doesn't take much effort on my part to print these & it's helped me learn more about the printer and 3D printing in general.
 
