@@ -190,6 +190,16 @@ static void send_response_with_data(uint8_t response_id,
         memcpy(&response_data[4], data, copy_len);
     }
 
+    // Log what we're sending (first few bytes for debugging)
+    log_serial_printf(
+        "[USB] Sending response: id=0x%02X, len=%lu, data[0..3]=%02X %02X %02X %02X\n",
+        response_id,
+        (unsigned long)copy_len,
+        copy_len > 0 ? response_data[4] : 0,
+        copy_len > 1 ? response_data[5] : 0,
+        copy_len > 2 ? response_data[6] : 0,
+        copy_len > 3 ? response_data[7] : 0);
+
     bool success = tud_hid_n_report(
         g_transfer_state.interface_num, 0, response_data, sizeof(response_data));
 
@@ -1090,6 +1100,14 @@ static void handle_log_read_chunk(void) {
 
     uint8_t chunk_buffer[60] = {0};
     uint32_t bytes_read = log_buffer_read_chunk(chunk_buffer, sizeof(chunk_buffer));
+
+    log_serial_printf(
+        "[USB] LOG_READ_CHUNK: bytes_read=%lu, chunk[0..3]=%02X %02X %02X %02X\n",
+        (unsigned long)bytes_read,
+        bytes_read > 0 ? chunk_buffer[0] : 0,
+        bytes_read > 1 ? chunk_buffer[1] : 0,
+        bytes_read > 2 ? chunk_buffer[2] : 0,
+        bytes_read > 3 ? chunk_buffer[3] : 0);
 
     if (bytes_read > 0) {
         send_response_with_data(RESP_OK, chunk_buffer, bytes_read);

@@ -206,6 +206,11 @@ class ODKeyConfigUsb:
                         return False, b""
 
                     response_id = response[0]
+                    
+                    # Log what we received for debugging
+                    print(f"[DEBUG] Received packet: id=0x{response_id:02X}, expected=0x{RESP_OK:02X} or 0x{RESP_ERROR:02X}, "
+                          f"data[4..7]={response[4]:02X} {response[5]:02X} {response[6]:02X} {response[7]:02X}")
+                    
                     if response_id == RESP_OK:
                         return True, response
                     elif response_id == RESP_ERROR:
