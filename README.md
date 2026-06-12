@@ -1,6 +1,6 @@
 # ODKey - A USB HID macro key, with a fun WiFi backdoor
 
-You can find an explanation for this device's existence in [ABOUT.md](/ABOUT.md).
+You can find an explanation for this device's existence in [the docs](https://jerryryle.github.io/odkey/).
 
 The ODKey is a hardware device featuring a single button (a [NovelKeys Big Switch](https://novelkeys.com/collections/switches/products/the-big-switch-series)), a USB interface, and a WiFi interface.
 
