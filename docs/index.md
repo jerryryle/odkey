@@ -38,6 +38,7 @@ Second, the key would be functional, and not just in the sense that it could be 
 
 Third, and this was very important, it would contain a WiFi radio and an HTTP interface that would let me send keypresses of my choosing to whatever computer the ODKey was plugged into.
 
+# The Making Of
 To begin, I sourced a large mechanical switch because I didn't want to create the switch mechanism from scratch. I found the [NovelKeys Big Switch series](https://novelkeys.com/collections/switches/products/the-big-switch-series?variant=3747938500648) and purchased the [blue Clicky](https://www.adafruit.com/product/5307) model from Adafruit.
 
 ![The Blue Big Switch](media/img-blue-key.jpeg "Photo of a blue Big Switch next to the box it came in")
