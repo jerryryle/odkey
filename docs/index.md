@@ -4,7 +4,7 @@ title: "(November 2025) ODKey: A USB HID macro key, with a fun WiFi backdoor"
 # Background
 You can find more technical detail and instructions for ODKey use in the [repo itself](https://github.com/jerryryle/odkey).
 
-I made the ODKey to prank my coworker and send messages from him in Slack. It almost worked, but I forgot to revert my script from a test channel to a real one. Ah well, next time. He caught it furiously trying to type to a non-existent channel. I've never seen someone unplug a USB device that fast.
+I made the ODKey to prank my coworker and send messages to our entire company from his Slack account. It almost worked, but I forgot to revert my script from a test channel to a real one. Ah well, next time. He caught it furiously trying to type to a non-existent channel. I've never seen someone unplug a USB device that fast.
 
 ![The ODKey](media/img-odkey.jpeg "Photo of the ODKey at OD's desk")
 
